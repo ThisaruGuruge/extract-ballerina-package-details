@@ -1,0 +1,127 @@
+import ballerina/file;
+import ballerina/graphql;
+import ballerina/io;
+import ballerina/lang.'string;
+import ballerina/lang.runtime;
+
+const string BALLERINA_CENTRAL_GRAPHQL_URL = "https://api.central.ballerina.io/2.0/graphql";
+const string BALLERINA_CENTRAL_URL = "https://central.ballerina.io";
+
+const decimal SLEEP_TIMER = 5;
+
+const string HEALTHCARE_PACKAGE_PREFIX = "health.";
+
+final string packageListFilePath = check file:joinPath("resources", "ballerinax-package-list");
+final string keywordsFilePath = check file:joinPath("resources", "keywords");
+
+configurable boolean needPackageList = true;
+configurable boolean needTotalPullCount = false;
+configurable boolean needKeywordAnalysis = true;
+configurable boolean needCsvExport = true;
+
+configurable string orgName = "ballerinax";
+configurable int 'limit = 1000;
+configurable int 'offset = 0;
+
+configurable string? pullStatStartDate = ();
+configurable string? pullStatEndDate = ();
+
+final graphql:Client ballerinaCentral = check new (BALLERINA_CENTRAL_GRAPHQL_URL);
+
+public function main() returns error? {
+    Package[] packages = check retrievePackageList();
+    if needTotalPullCount {
+        printInfo("Getting total pull count for packages");
+        foreach Package package in packages {
+            check getTotalPullCount(package);
+            runtime:sleep(SLEEP_TIMER); // To avoid rate limiting
+        }
+        check writeToFile(packageListFilePath, packages);
+    }
+    if needKeywordAnalysis {
+        map<string[]> keywordMap = analyzeKeywords(packages);
+        check writeToFile(keywordsFilePath, keywordMap);
+    }
+
+    io:println(string `Package list retrieved and saved to ${packageListFilePath}`);
+}
+
+isolated function retrievePackageList() returns Package[]|error {
+    if needPackageList {
+        printInfo("Retrieving package list from Central");
+        return check retrievePackageListFromCentral();
+    }
+    printInfo("Retrieving package list from file");
+    return check retrievePackageListFromFile();
+}
+
+isolated function retrievePackageListFromFile() returns Package[]|error {
+    return (check io:fileReadJson(string `${packageListFilePath}${JSON_FILE_EXTENSION}`)).fromJsonWithType();
+}
+
+isolated function retrievePackageListFromCentral() returns Package[]|error {
+    printInfo("Retrieving package list from Central");
+
+    RetrievePackageListInput input = {
+        orgName,
+        'limit,
+        offset
+    };
+    PackageListResponse packageListResponse = check ballerinaCentral->execute(GET_PACKAGE_LIST_QUERY, input);
+    Package[] packages = packageListResponse.data.packages.packages;
+    check writeToFile(packageListFilePath, packages);
+    return from Package package in packages
+        where !'string:startsWith(package.name, HEALTHCARE_PACKAGE_PREFIX)
+        select {
+            name: package.name,
+            URL: string `${BALLERINA_CENTRAL_URL}${package.URL}`,
+            version: package.version,
+            totalPullCount: package.totalPullCount,
+            keywords: package.keywords,
+            pullCount: package.pullCount
+        };
+}
+
+isolated function getTotalPullCount(Package package) returns error? {
+    TotalPullCountInput input = {
+        orgName,
+        packageName: package.name,
+        version: package.version,
+        pullStatStartDate,
+        pullStatEndDate
+    };
+    TotalPullCountResponse response = check ballerinaCentral->execute(GET_TOTAL_PULL_COUNT_QUERY, input);
+    package.totalPullCount = response?.data?.package?.totalPullCount;
+}
+
+isolated function analyzeKeywords(Package[] packages) returns map<string[]> {
+    map<string[]> keywordMap = categorize(packages);
+    map<string[]> filteredKeywordMap = filterKeywords(keywordMap);
+    return filteredKeywordMap;
+}
+
+isolated function categorize(Package[] packages) returns map<string[]> {
+    map<string[]> keywordMap = {};
+    foreach Package package in packages {
+        string[] packageKeywords = package.keywords;
+        foreach string keyword in packageKeywords {
+            if keywordMap.hasKey(keyword) {
+                keywordMap.get(keyword).push(package.name);
+            } else {
+                keywordMap[keyword] = [package.name];
+            }
+        }
+    }
+    return keywordMap;
+}
+
+isolated function filterKeywords(map<string[]> keywordMap) returns map<string[]> {
+    map<string[]> filteredKeywordMap = {};
+
+    foreach string keyword in keywordMap.keys() {
+        if keywordMap.get(keyword).length() > 1 {
+            filteredKeywordMap[keyword] = keywordMap.get(keyword);
+        }
+    }
+    return filteredKeywordMap;
+}
