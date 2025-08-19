@@ -7,12 +7,15 @@ import ballerina/lang.runtime;
 const string BALLERINA_CENTRAL_GRAPHQL_URL = "https://api.central.ballerina.io/2.0/graphql";
 const string BALLERINA_CENTRAL_URL = "https://central.ballerina.io";
 
-const decimal SLEEP_TIMER = 5;
+// Rate limit is 50 requests per minute. Sleep for 1.5 seconds after each request to avoid rate limiting.
+const decimal SLEEP_TIMER = 1.5;
 
 const string HEALTHCARE_PACKAGE_PREFIX = "health.";
 
-final string packageListFilePath = check file:joinPath("resources", "ballerinax-package-list");
-final string keywordsFilePath = check file:joinPath("resources", "keywords");
+final string packageListFilePath = check file:joinPath("resources", string `${orgName}-package-list`);
+final string keywordsFilePath = check file:joinPath("resources", string `${orgName}-keywords`);
+final string filteredKeywordsFilePath = check file:joinPath("resources", string `${orgName}-filtered-keywords`);
+final string categorizedKeywordsFilePath = check file:joinPath("resources", string `${orgName}-categorized-keywords`);
 
 configurable boolean needPackageList = true;
 configurable boolean needTotalPullCount = false;
@@ -30,17 +33,26 @@ final graphql:Client ballerinaCentral = check new (BALLERINA_CENTRAL_GRAPHQL_URL
 
 public function main() returns error? {
     Package[] packages = check retrievePackageList();
-    if needTotalPullCount {
-        printInfo("Getting total pull count for packages");
-        foreach Package package in packages {
-            check getTotalPullCount(package);
-            runtime:sleep(SLEEP_TIMER); // To avoid rate limiting
+    do {
+        if needTotalPullCount {
+            printInfo("Getting total pull count for packages");
+            foreach Package package in packages {
+                check getTotalPullCount(package);
+                runtime:sleep(SLEEP_TIMER); // To avoid rate limiting
+            }
         }
+    } on fail error err {
         check writeToFile(packageListFilePath, packages);
+        printWarning(string `Failed to get total pull count for packages, saved package list to "${packageListFilePath}" without total pull count. Error: ${err.message()}`);
     }
+    check writeToFile(packageListFilePath, packages);
     if needKeywordAnalysis {
-        map<string[]> keywordMap = analyzeKeywords(packages);
+        printInfo("Analyzing keywords");
+        [map<string[]>, map<string[]>] [keywordMap, filteredKeywordMap] = analyzeKeywords(packages);
+        map<string[]> categorizedKeywordMap = categorizeKeywords(keywordMap);
         check writeToFile(keywordsFilePath, keywordMap);
+        check writeToFile(filteredKeywordsFilePath, filteredKeywordMap);
+        check writeToFile(categorizedKeywordsFilePath, categorizedKeywordMap);
     }
 
     io:println(string `Package list retrieved and saved to ${packageListFilePath}`);
@@ -48,20 +60,18 @@ public function main() returns error? {
 
 isolated function retrievePackageList() returns Package[]|error {
     if needPackageList {
-        printInfo("Retrieving package list from Central");
         return check retrievePackageListFromCentral();
     }
-    printInfo("Retrieving package list from file");
     return check retrievePackageListFromFile();
 }
 
 isolated function retrievePackageListFromFile() returns Package[]|error {
+    printInfo("Retrieving package list from file");
     return (check io:fileReadJson(string `${packageListFilePath}${JSON_FILE_EXTENSION}`)).fromJsonWithType();
 }
 
 isolated function retrievePackageListFromCentral() returns Package[]|error {
     printInfo("Retrieving package list from Central");
-
     RetrievePackageListInput input = {
         orgName,
         'limit,
@@ -69,7 +79,6 @@ isolated function retrievePackageListFromCentral() returns Package[]|error {
     };
     PackageListResponse packageListResponse = check ballerinaCentral->execute(GET_PACKAGE_LIST_QUERY, input);
     Package[] packages = packageListResponse.data.packages.packages;
-    check writeToFile(packageListFilePath, packages);
     return from Package package in packages
         where !'string:startsWith(package.name, HEALTHCARE_PACKAGE_PREFIX)
         select {
@@ -94,10 +103,10 @@ isolated function getTotalPullCount(Package package) returns error? {
     package.totalPullCount = response?.data?.package?.totalPullCount;
 }
 
-isolated function analyzeKeywords(Package[] packages) returns map<string[]> {
+isolated function analyzeKeywords(Package[] packages) returns [map<string[]>, map<string[]>] {
     map<string[]> keywordMap = categorize(packages);
     map<string[]> filteredKeywordMap = filterKeywords(keywordMap);
-    return filteredKeywordMap;
+    return [keywordMap, filteredKeywordMap];
 }
 
 isolated function categorize(Package[] packages) returns map<string[]> {
