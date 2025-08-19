@@ -21,6 +21,7 @@ configurable boolean needPackageList = true;
 configurable boolean needTotalPullCount = false;
 configurable boolean needKeywordAnalysis = true;
 configurable boolean needCsvExport = true;
+configurable boolean skipHealthcarePackages = true;
 
 configurable string orgName = "ballerinax";
 configurable int 'limit = 1000;
@@ -79,8 +80,20 @@ isolated function retrievePackageListFromCentral() returns Package[]|error {
     };
     PackageListResponse packageListResponse = check ballerinaCentral->execute(GET_PACKAGE_LIST_QUERY, input);
     Package[] packages = packageListResponse.data.packages.packages;
+    if skipHealthcarePackages {
+        printInfo("Skipping healthcare packages");
+        return from Package package in packages
+            where !'string:startsWith(package.name, HEALTHCARE_PACKAGE_PREFIX)
+            select {
+                name: package.name,
+                URL: string `${BALLERINA_CENTRAL_URL}${package.URL}`,
+                version: package.version,
+                totalPullCount: package.totalPullCount,
+                keywords: package.keywords,
+                pullCount: package.pullCount
+            };
+    }
     return from Package package in packages
-        where !'string:startsWith(package.name, HEALTHCARE_PACKAGE_PREFIX)
         select {
             name: package.name,
             URL: string `${BALLERINA_CENTRAL_URL}${package.URL}`,
