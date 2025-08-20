@@ -2,28 +2,61 @@ import ballerina/data.jsondata;
 import ballerina/io;
 import ballerina/lang.array;
 
-const string JSON_FILE_EXTENSION = ".json";
-const string CSV_FILE_EXTENSION = ".csv";
+// ANSI Color codes for terminal output
+const string ESC = "\u{001B}";
+const string RESET = ESC + "[0m";
+const string BOLD = ESC + "[1m";
+
+// Colors
+const string RED = ESC + "[31m";
+const string GREEN = ESC + "[32m";
+const string YELLOW = ESC + "[33m";
+const string BLUE = ESC + "[34m";
+const string MAGENTA = ESC + "[35m";
+const string CYAN = ESC + "[36m";
+const string WHITE = ESC + "[37m";
+
+// Bright colors
+const string BRIGHT_RED = ESC + "[91m";
+const string BRIGHT_GREEN = ESC + "[92m";
+const string BRIGHT_YELLOW = ESC + "[93m";
+const string BRIGHT_BLUE = ESC + "[94m";
+const string BRIGHT_MAGENTA = ESC + "[95m";
+const string BRIGHT_CYAN = ESC + "[96m";
 
 isolated function printInfo(string message) {
-    io:println(string `[INFO] ${message}`);
+    io:println(string `${BLUE}${BOLD}[INFO]${RESET} ${message}`);
 }
 
 isolated function printWarning(string message) {
-    io:println(string `[WARNING] ${message}`);
+    io:println(string `${YELLOW}${BOLD}[WARNING]${RESET} ${YELLOW}${message}${RESET}`);
+}
+
+isolated function printSuccess(string message) {
+    io:println(string `${GREEN}${BOLD}[SUCCESS]${RESET} ${GREEN}${message}${RESET}`);
+}
+
+isolated function printProgress(string message) {
+    io:println(string `${CYAN}${BOLD}[PROGRESS]${RESET} ${CYAN}${message}${RESET}`);
+}
+
+isolated function printStats(string message) {
+    io:println(string `${MAGENTA}${BOLD}[STATS]${RESET} ${MAGENTA}${message}${RESET}`);
 }
 
 isolated function categorizeKeywords(map<string[]> keywords) returns map<string[]> {
     map<string[]> parentKeywords = {};
     foreach string keyword in keywords.keys() {
-        if re `/`.split(keyword).length() > 1 {
-            string[] keywordParts = re `/`.split(keyword);
-            string parentKeyword = keywordParts[0];
-            string childKeyword = keywordParts[1];
-            if parentKeywords.hasKey(parentKeyword) {
-                parentKeywords.get(parentKeyword).push(childKeyword);
-            } else {
-                parentKeywords[parentKeyword] = [childKeyword];
+        if keyword.includes("/") {
+            int? slashIndex = keyword.indexOf("/");
+            if slashIndex is int {
+                string parentKeyword = keyword.substring(0, slashIndex);
+                string childKeyword = keyword.substring(slashIndex + 1);
+                if parentKeywords.hasKey(parentKeyword) {
+                    parentKeywords.get(parentKeyword).push(childKeyword);
+                } else {
+                    parentKeywords[parentKeyword] = [childKeyword];
+                }
             }
         }
     }
@@ -31,13 +64,18 @@ isolated function categorizeKeywords(map<string[]> keywords) returns map<string[
 }
 
 isolated function writeToFile(string filePath, Package[]|map<string[]> data) returns error? {
+    printProgress(string `Writing data to ${filePath}`);
+
     check writeToJsonFile(string `${filePath}${JSON_FILE_EXTENSION}`, data);
+    printSuccess(string `JSON data written to ${filePath}${JSON_FILE_EXTENSION}`);
+
     if needCsvExport {
         if data is map<string[]> {
             check writeToCsvFile(string `${filePath}${CSV_FILE_EXTENSION}`, transformKeywordsToCsvData(data));
         } else {
             check writeToCsvFile(string `${filePath}${CSV_FILE_EXTENSION}`, data);
         }
+        printSuccess(string `CSV data written to ${filePath}${CSV_FILE_EXTENSION}`);
     }
 }
 
@@ -97,4 +135,13 @@ isolated function rotateMatrix90Degrees(string[][] matrix) returns string[][] {
     }
 
     return rotated;
+}
+
+isolated function shouldSkipPackage(string packageName, string[] skipPackagePrefixes) returns boolean {
+    foreach string skipPackagePrefix in skipPackagePrefixes {
+        if packageName.startsWith(skipPackagePrefix) {
+            return true;
+        }
+    }
+    return false;
 }

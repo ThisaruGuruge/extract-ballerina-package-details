@@ -55,6 +55,29 @@ The application can be configured using the following configurable variables in 
 | `pullStatStartDate` | string? | () | Start date for pull statistics |
 | `pullStatEndDate` | string? | () | End date for pull statistics |
 
+### Example Config.toml
+
+You can also create a `Config.toml` file in your project root to override the default configuration:
+
+```toml
+# Organization to analyze
+orgName = "ballerina"
+
+# Analysis options
+needPackageList = true
+needTotalPullCount = true
+needKeywordAnalysis = true
+needCsvExport = true
+
+# Optional: Date range for pull statistics (ISO 8601 format)
+# pullStatStartDate = "2024-01-01"
+# pullStatEndDate = "2024-12-31"
+
+# Optional: Pagination settings
+# limit = 500
+# offset = 0
+```
+
 ## Usage
 
 ### Basic Usage
