@@ -4,14 +4,14 @@ type RetrievePackageListInput record {|
     int 'offset;
 |};
 
-type Package record {|
+type Package record {
     string name;
     string URL;
     string version;
     int? totalPullCount = ();
     int pullCount;
     string[] keywords = [];
-|};
+};
 
 # Data type returned by the Ballerina Central API when retrieving the package list
 type PackageListResponse record {|

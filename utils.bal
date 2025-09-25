@@ -1,6 +1,8 @@
 import ballerina/data.jsondata;
 import ballerina/io;
 import ballerina/lang.array;
+import ballerina/time;
+import ballerina/file;
 
 // ANSI Color codes for terminal output
 const string ESC = "\u{001B}";
@@ -64,19 +66,38 @@ isolated function categorizeKeywords(map<string[]> keywords) returns map<string[
 }
 
 isolated function writeToFile(string filePath, Package[]|map<string[]> data) returns error? {
-    printProgress(string `Writing data to ${filePath}`);
+    time:Utc now = time:utcNow();
+    time:Civil nowCivil = time:utcToCivil(now);
+    string timestamp = string `${nowCivil.year}-${nowCivil.month}-${nowCivil.day}`;
 
-    check writeToJsonFile(string `${filePath}${JSON_FILE_EXTENSION}`, data);
-    printSuccess(string `JSON data written to ${filePath}${JSON_FILE_EXTENSION}`);
+    string resultDirectory = check file:joinPath(RESULTS_DIR, timestamp, filePath);
+    string parentDir = check file:parentPath(string `${resultDirectory}${JSON_FILE_EXTENSION}`);
+    check file:createDir(parentDir, file:RECURSIVE);
+    printInfo(string `Writing data to ${resultDirectory}`);
+    check writeToJsonFile(string `${resultDirectory}${JSON_FILE_EXTENSION}`, data.toJson());
+    printSuccess(string `JSON data written to ${resultDirectory}${JSON_FILE_EXTENSION}`);
 
     if needCsvExport {
         if data is map<string[]> {
-            check writeToCsvFile(string `${filePath}${CSV_FILE_EXTENSION}`, transformKeywordsToCsvData(data));
+            check writeToCsvFile(string `${resultDirectory}${CSV_FILE_EXTENSION}`, transformKeywordsToCsvData(data));
         } else {
-            check writeToCsvFile(string `${filePath}${CSV_FILE_EXTENSION}`, data);
+            check writeToCsvFile(string `${resultDirectory}${CSV_FILE_EXTENSION}`, data);
         }
-        printSuccess(string `CSV data written to ${filePath}${CSV_FILE_EXTENSION}`);
+        printSuccess(string `CSV data written to ${resultDirectory}${CSV_FILE_EXTENSION}`);
     }
+}
+
+isolated function getLatestExistingResultsDirectory() returns string|error {
+    file:MetaData[] resultDirectories = check file:readDir(RESULTS_DIR);
+    if resultDirectories.length() == 0 {
+        return error("No existing results found. Set 'needPackageListFromCentral' to 'true' and rerun the application to generate the results.");
+    }
+    resultDirectories = resultDirectories.sort(array:DESCENDING, key = getModifiedTime);
+    return resultDirectories[0].absPath;
+}
+
+isolated function getModifiedTime(file:MetaData dir) returns time:Utc {
+    return dir.modifiedTime;
 }
 
 isolated function writeToJsonFile(string filePath, json data) returns error? {
