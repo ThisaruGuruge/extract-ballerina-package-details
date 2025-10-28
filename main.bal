@@ -19,23 +19,9 @@ final string keywordsFilePath = string `${orgName}-keywords`;
 final string filteredKeywordsFilePath = string `${orgName}-filtered-keywords`;
 final string categorizedKeywordsFilePath = string `${orgName}-categorized-keywords`;
 
-configurable boolean needPackageListFromCentral = true;
-configurable boolean needTotalPullCount = false;
-configurable boolean needKeywordAnalysis = true;
-configurable boolean needCsvExport = true;
-
-# When filtering the keywords, the keyword will be kept if it has at least this many packages.
-configurable int minPackagesPerKeyword = 1;
-
-configurable string orgName = "ballerinax";
-configurable int 'limit = 1000;
-configurable int 'offset = 0;
-configurable string[] skipPackagePrefixes = [];
-
-configurable string? pullStatStartDate = ();
-configurable string? pullStatEndDate = ();
-
 final graphql:Client ballerinaCentral = check new (BALLERINA_CENTRAL_GRAPHQL_URL);
+
+final string timestamp = check getTimestamp();
 
 public function main() returns error? {
     check validateConfiguration();
@@ -47,26 +33,13 @@ public function main() returns error? {
     printStats(string `Retrieved ${packages.length()} packages from ${orgName}`);
 
     if needTotalPullCount {
-        do {
-            printProgress("Fetching total pull count statistics for all packages");
-            int processedCount = 0;
-            foreach Package package in packages {
-                check getTotalPullCount(package);
-                processedCount += 1;
-                if processedCount % 10 == 0 {
-                    printProgress(string `Processed ${processedCount}/${packages.length()} packages for pull count data`);
-                }
-                runtime:sleep(SLEEP_TIMER); // To avoid rate limiting
-            }
-            printSuccess(string `Successfully retrieved pull count data for ${packages.length()} packages`);
-        } on fail error err {
-            printWarning(string `Failed to retrieve total pull count data. Error: ${err.message()}`);
-            printInfo("Proceeding with package data without pull count statistics");
-        }
+        getPullCount(packages);
     }
 
-    check writeToFile(packageListFilePath, packages);
-    printSuccess(string `Package data exported to ${packageListFilePath}`);
+    // Prepare data output
+    DataOutput dataOutput = {
+        packages: packages
+    };
 
     if needKeywordAnalysis {
         printProgress("Analyzing package keywords and creating categorization");
@@ -76,14 +49,18 @@ public function main() returns error? {
         printStats(string `Found ${keywordMap.keys().length()} unique keywords across all packages`);
         printStats(string `Filtered to ${filteredKeywordMap.keys().length()} keywords (appearing in ≥${minPackagesPerKeyword} packages)`);
 
-        check writeToFile(keywordsFilePath, keywordMap);
-        check writeToFile(filteredKeywordsFilePath, filteredKeywordMap);
-        check writeToFile(categorizedKeywordsFilePath, categorizedKeywordMap);
+        dataOutput.keywords = keywordMap;
+        dataOutput.filteredKeywords = filteredKeywordMap;
+        dataOutput.categorizedKeywords = categorizedKeywordMap;
 
-        printSuccess("Keyword analysis completed and exported");
+        printSuccess("Keyword analysis completed");
     }
 
-    printSuccess(string `Analysis complete! All data exported to ${RESULTS_DIR}/ directory`);
+    // Write all data in batch
+    check writeDataBatch(dataOutput);
+    printSuccess(string `All data exported to ${RESULTS_DIR}/ directory`);
+
+    printSuccess(string `Analysis complete!`);
     printStats(string `Total packages analyzed: ${packages.length()}`);
 }
 
@@ -262,4 +239,23 @@ isolated function filterKeywords(map<string[]> keywordMap) returns map<string[]>
 
     printStats(string `Keyword filtering: ${filteredCount}/${totalKeywords} keywords meet threshold (≥${minPackagesPerKeyword} packages)`);
     return filteredKeywordMap;
+}
+
+isolated function getPullCount(Package[] packages) {
+    do {
+        printProgress("Fetching total pull count statistics for all packages");
+        int processedCount = 0;
+        foreach Package package in packages {
+            check getTotalPullCount(package);
+            processedCount += 1;
+            if processedCount % 10 == 0 {
+                printProgress(string `Processed ${processedCount}/${packages.length()} packages for pull count data`);
+            }
+            runtime:sleep(SLEEP_TIMER); // To avoid rate limiting
+        }
+        printSuccess(string `Successfully retrieved pull count data for ${packages.length()} packages`);
+    } on fail error err {
+        printWarning(string `Failed to retrieve total pull count data. Error: ${err.message()}`);
+        printInfo("Proceeding with package data without pull count statistics");
+    }
 }

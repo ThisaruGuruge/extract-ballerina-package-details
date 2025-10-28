@@ -1,3 +1,5 @@
+import ballerinax/googleapis.sheets;
+
 type RetrievePackageListInput record {|
     string orgName;
     int 'limit;
@@ -37,4 +39,18 @@ type TotalPullCountResponse record {|
             int? totalPullCount;
         |}? package;
     |}? data;
+|};
+
+type GoogleSheetConfig record {|
+    string clientId;
+    string clientSecret;
+    string refreshUrl = sheets:REFRESH_URL;
+    string refreshToken;
+|};
+
+type DataOutput record {|
+    Package[] packages;
+    map<string[]>? keywords = ();
+    map<string[]>? filteredKeywords = ();
+    map<string[]>? categorizedKeywords = ();
 |};
