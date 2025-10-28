@@ -1,12 +1,19 @@
 import ballerinax/googleapis.sheets;
 
-sheets:ConnectionConfig spreadsheetConfig = {
-    auth: googleSheetAuthConfig
-};
-
-final sheets:Client googleSheet = check new (spreadsheetConfig);
-
 final string sheetName = string `[Connector Analysis] ${orgName}-${timestamp}`;
+
+isolated function getGoogleSheetClient() returns sheets:Client|error {
+    GoogleSheetConfig? authConfig = googleSheetAuthConfig;
+    if authConfig is () {
+        return error("Google Sheets authentication configuration is not provided");
+    }
+
+    sheets:ConnectionConfig spreadsheetConfig = {
+        auth: authConfig
+    };
+
+    return new (spreadsheetConfig);
+}
 
 isolated function getOrCreateSpreadsheet() returns string|error {
     // Check if config provides a spreadsheet ID
@@ -18,12 +25,15 @@ isolated function getOrCreateSpreadsheet() returns string|error {
     }
 
     // Create a new spreadsheet
+    sheets:Client googleSheet = check getGoogleSheetClient();
     sheets:Spreadsheet spreadsheet = check googleSheet->createSpreadsheet(sheetName);
     printSuccess(string `Created new Google Spreadsheet: ${spreadsheet.spreadsheetUrl}`);
     return spreadsheet.spreadsheetId;
 }
 
 isolated function writeToSheet(string targetSpreadsheetId, string name, string[][] data) returns error? {
+    sheets:Client googleSheet = check getGoogleSheetClient();
+
     // Create a new sheet tab for this data type
     sheets:Sheet sheet = check googleSheet->addSheet(targetSpreadsheetId, name);
     printInfo(string `Created sheet tab: ${name} (ID: ${sheet.properties.sheetId})`);

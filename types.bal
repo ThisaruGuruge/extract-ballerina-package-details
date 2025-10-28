@@ -54,3 +54,11 @@ type DataOutput record {|
     map<string[]>? filteredKeywords = ();
     map<string[]>? categorizedKeywords = ();
 |};
+
+type PackageWithoutKeywords record {|
+    string name;
+    string URL;
+    string version;
+    int? totalPullCount = ();
+    int pullCount;
+|};

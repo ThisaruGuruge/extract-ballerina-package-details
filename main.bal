@@ -95,6 +95,14 @@ isolated function validateConfiguration() returns error? {
             return error("pullStatEndDate must be in ISO date format (YYYY-MM-DD)");
         }
     }
+
+    // Validate Google Sheets configuration if export is enabled
+    if needGoogleSheetExport {
+        GoogleSheetConfig? authConfig = googleSheetAuthConfig;
+        if authConfig is () {
+            return error("googleSheetAuthConfig must be provided when needGoogleSheetExport is true");
+        }
+    }
 }
 
 isolated function isValidISODate(string dateStr) returns boolean {
@@ -255,7 +263,7 @@ isolated function getPullCount(Package[] packages) {
         }
         printSuccess(string `Successfully retrieved pull count data for ${packages.length()} packages`);
     } on fail error err {
-        printWarning(string `Failed to retrieve total pull count data. Error: ${err.message()}`);
-        printInfo("Proceeding with package data without pull count statistics");
+        printError(err);
+        printWarning("Proceeding with package data without pull count statistics");
     }
 }

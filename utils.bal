@@ -34,6 +34,19 @@ isolated function printWarning(string message) {
     io:println(string `${YELLOW}${BOLD}[WARNING]${RESET} ${YELLOW}${message}${RESET}`);
 }
 
+isolated function printError(error err) {
+    string errorMessage = err.message();
+    error? cause = err.cause();
+
+    io:println(string `${RED}${BOLD}[ERROR]${RESET} ${RED}${errorMessage}${RESET}`);
+
+    // Print cause chain if exists
+    while cause is error {
+        io:println(string `${RED}${BOLD}[ERROR]${RESET} ${RED}  Caused by: ${cause.message()}${RESET}`);
+        cause = cause.cause();
+    }
+}
+
 isolated function printSuccess(string message) {
     io:println(string `${GREEN}${BOLD}[SUCCESS]${RESET} ${GREEN}${message}${RESET}`);
 }
@@ -65,12 +78,31 @@ isolated function categorizeKeywords(map<string[]> keywords) returns map<string[
     return parentKeywords;
 }
 
-isolated function writeData(string filePath, Package[]|map<string[]> data, string? googleSpreadsheetId = ()) returns error? {
+isolated function transformToJsonData(Package[]|map<string[]> data) returns json {
+    if data is Package[] {
+        // Transform packages to remove keywords field
+        PackageWithoutKeywords[] packagesWithoutKeywords = from Package package in data
+            select {
+                name: package.name,
+                URL: package.URL,
+                version: package.version,
+                totalPullCount: package.totalPullCount,
+                pullCount: package.pullCount
+            };
+        return packagesWithoutKeywords.toJson();
+    }
+    // For keyword maps, return as-is
+    return data.toJson();
+}
+
+isolated function writeData(string filePath, Package[]|map<string[]> data, string? googleSpreadsheetId = (), string? sheetName = ()) returns error? {
     string resultDirectory = check file:joinPath(RESULTS_DIR, timestamp, filePath);
     string parentDir = check file:parentPath(string `${resultDirectory}${JSON_FILE_EXTENSION}`);
     check file:createDir(parentDir, file:RECURSIVE);
     printInfo(string `Writing data to ${resultDirectory}`);
-    check writeToJsonFile(string `${resultDirectory}${JSON_FILE_EXTENSION}`, data.toJson());
+
+    json jsonData = transformToJsonData(data);
+    check writeToJsonFile(string `${resultDirectory}${JSON_FILE_EXTENSION}`, jsonData);
 
     if needCsvExport || needGoogleSheetExport {
         string[][] csvData = transformToCsvData(data);
@@ -78,7 +110,8 @@ isolated function writeData(string filePath, Package[]|map<string[]> data, strin
             check writeToCsvFile(string `${resultDirectory}${CSV_FILE_EXTENSION}`, csvData);
         }
         if needGoogleSheetExport && googleSpreadsheetId is string {
-            check writeToSheet(googleSpreadsheetId, filePath, csvData);
+            string tabName = sheetName is string ? sheetName : filePath;
+            check writeToSheet(googleSpreadsheetId, tabName, csvData);
         }
     }
 }
@@ -90,21 +123,21 @@ isolated function writeDataBatch(DataOutput dataOutput) returns error? {
         googleSpreadsheetId = check getOrCreateSpreadsheet();
     }
 
-    check writeData(packageListFilePath, dataOutput.packages, googleSpreadsheetId);
+    check writeData(packageListFilePath, dataOutput.packages, googleSpreadsheetId, "Packages");
 
     map<string[]>? keywords = dataOutput.keywords;
     if keywords is map<string[]> {
-        check writeData(keywordsFilePath, keywords, googleSpreadsheetId);
+        check writeData(keywordsFilePath, keywords, googleSpreadsheetId, "Keywords");
     }
 
     map<string[]>? filteredKeywords = dataOutput.filteredKeywords;
     if filteredKeywords is map<string[]> {
-        check writeData(filteredKeywordsFilePath, filteredKeywords, googleSpreadsheetId);
+        check writeData(filteredKeywordsFilePath, filteredKeywords, googleSpreadsheetId, "Filtered Keywords");
     }
 
     map<string[]>? categorizedKeywords = dataOutput.categorizedKeywords;
     if categorizedKeywords is map<string[]> {
-        check writeData(categorizedKeywordsFilePath, categorizedKeywords, googleSpreadsheetId);
+        check writeData(categorizedKeywordsFilePath, categorizedKeywords, googleSpreadsheetId, "Categorized Keywords");
     }
 }
 

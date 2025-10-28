@@ -15,5 +15,5 @@ configurable string? pullStatEndDate = ();
 
 // Google Sheets Configurations
 configurable boolean needGoogleSheetExport = false;
-configurable GoogleSheetConfig googleSheetAuthConfig = ?;
+configurable GoogleSheetConfig? googleSheetAuthConfig = ();
 configurable string? spreadsheetId = ();
