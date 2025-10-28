@@ -144,20 +144,19 @@ isolated function transformToCsvData(Package[]|map<string[]> data) returns strin
 
 isolated function transformPackagesToCsvData(Package[] packages) returns string[][] {
     string[][] csvData = [];
-    // Add header row
-    csvData.push(["name", "URL", "version", "totalPullCount", "pullCount", "keywords"]);
+    // Add header row (excluding keywords since they have separate sheets)
+    csvData.push(["name", "URL", "version", "totalPullCount", "pullCount"]);
 
     // Add data rows
     foreach Package package in packages {
-        string keywordsStr = string:'join(", ", ...package.keywords);
-        string totalPullCountStr = package.totalPullCount is int ? package.totalPullCount.toString() : "";
+        int? totalPullCount = package.totalPullCount;
+        string totalPullCountStr = totalPullCount is int ? totalPullCount.toString() : "N/A";
         csvData.push([
             package.name,
             package.URL,
             package.version,
             totalPullCountStr,
-            package.pullCount.toString(),
-            keywordsStr
+            package.pullCount.toString()
         ]);
     }
     return csvData;
