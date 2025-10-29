@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Ballerina
+      uses: ballerina-platform/setup-ballerina@v1.1.3
+      with:
+        version: 2201.12.10
+
+    - name: Check code formatting
+      run: |
+        bal format
+        if [ -n "$(git status --porcelain)" ]; then
+          echo "Code is not formatted. Please run 'bal format' locally."
+          git diff
+          exit 1
+        fi
+
+    - name: Build project
+      run: bal build
+
+    - name: Run tests
+      run: bal test

@@ -1,8 +1,8 @@
 import ballerina/data.jsondata;
+import ballerina/file;
 import ballerina/io;
 import ballerina/lang.array;
 import ballerina/time;
-import ballerina/file;
 
 // ANSI Color codes for terminal output
 const string ESC = "\u{001B}";
@@ -245,28 +245,14 @@ isolated function rotateMatrix90Degrees(string[][] matrix) returns string[][] {
     }
 
     int rows = matrix.length();
-
-    // Find the maximum length of any row
-    int maxCols = 0;
-    foreach string[] row in matrix {
-        if row.length() > maxCols {
-            maxCols = row.length();
-        }
-    }
+    int maxCols = findMaxColumns(matrix);
 
     if maxCols == 0 {
         return [];
     }
 
-    string[][] rotated = [];
-
-    // Initialize the rotated matrix
-    foreach int i in 0 ..< maxCols {
-        rotated[i] = [];
-        foreach int j in 0 ..< rows {
-            rotated[i][j] = "";
-        }
-    }
+    // Pre-allocate rotated matrix with proper dimensions
+    string[][] rotated = initializeMatrix(maxCols, rows);
 
     // Rotate 90 degrees clockwise, handling variable-length rows
     foreach int i in 0 ..< rows {
@@ -277,6 +263,28 @@ isolated function rotateMatrix90Degrees(string[][] matrix) returns string[][] {
     }
 
     return rotated;
+}
+
+isolated function findMaxColumns(string[][] matrix) returns int {
+    int maxCols = 0;
+    foreach string[] row in matrix {
+        if row.length() > maxCols {
+            maxCols = row.length();
+        }
+    }
+    return maxCols;
+}
+
+isolated function initializeMatrix(int rows, int cols) returns string[][] {
+    string[][] matrix = [];
+    foreach int i in 0 ..< rows {
+        string[] row = [];
+        foreach int j in 0 ..< cols {
+            row.push("");
+        }
+        matrix.push(row);
+    }
+    return matrix;
 }
 
 isolated function shouldSkipPackage(string packageName, string[] skipPackagePrefixes) returns boolean {

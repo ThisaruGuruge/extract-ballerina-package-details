@@ -161,46 +161,54 @@ isolated function retrievePackageListFromCentral() returns Package[]|error {
         printProgress(string `Fetching package list from Ballerina Central for organization: ${orgName}`);
         printInfo(string `Requesting packages with limit: ${'limit}, offset: ${offset}`);
 
-        RetrievePackageListInput input = {
-            orgName,
-            'limit,
-            offset
-        };
-        PackageListResponse packageListResponse = check ballerinaCentral->execute(GET_PACKAGE_LIST_QUERY, input);
-        Package[] packages = packageListResponse.data.packages.packages;
-
+        Package[] packages = check fetchPackagesFromAPI();
         printStats(string `Retrieved ${packages.length()} packages from Central API`);
 
-        Package[] transformedPackages = from Package package in packages
-            select {
-                name: package.name,
-                URL: string `${BALLERINA_CENTRAL_URL}${package.URL}`,
-                version: package.version,
-                totalPullCount: package.totalPullCount,
-                keywords: package.keywords,
-                pullCount: package.pullCount,
-                createdDate: package.createdDate
-            };
+        Package[] transformedPackages = transformPackageURLs(packages);
+        Package[] finalPackages = applyPackageFilters(transformedPackages);
 
-        if skipPackagePrefixes.length() > 0 {
-            printInfo(string `Filtering out packages with prefixes: ${skipPackagePrefixes.toString()}`);
-            Package[] filteredPackages = [];
-            foreach Package package in transformedPackages {
-                if shouldSkipPackage(package.name, skipPackagePrefixes) {
-                    printInfo(string `Skipping package: ${package.name}`);
-                    continue;
-                }
-                filteredPackages.push(package);
-            }
-            printStats(string `After filtering: ${filteredPackages.length()} packages (excluded ${transformedPackages.length() - filteredPackages.length()} packages)`);
-            return filteredPackages;
-        }
-
-        printInfo("Processing all packages");
-        return transformedPackages;
+        return finalPackages;
     } on fail error err {
         return error("Failed to retrieve package list from Ballerina Central", err);
     }
+}
+
+isolated function fetchPackagesFromAPI() returns Package[]|error {
+    RetrievePackageListInput input = {orgName, 'limit, offset};
+    PackageListResponse response = check ballerinaCentral->execute(GET_PACKAGE_LIST_QUERY, input);
+    return response.data.packages.packages;
+}
+
+isolated function transformPackageURLs(Package[] packages) returns Package[] {
+    return from Package package in packages
+        select {
+            name: package.name,
+            URL: string `${BALLERINA_CENTRAL_URL}${package.URL}`,
+            version: package.version,
+            totalPullCount: package.totalPullCount,
+            keywords: package.keywords,
+            pullCount: package.pullCount,
+            createdDate: package.createdDate
+        };
+}
+
+isolated function applyPackageFilters(Package[] packages) returns Package[] {
+    if skipPackagePrefixes.length() == 0 {
+        printInfo("Processing all packages");
+        return packages;
+    }
+
+    printInfo(string `Filtering out packages with prefixes: ${skipPackagePrefixes.toString()}`);
+    Package[] filteredPackages = [];
+    foreach Package package in packages {
+        if shouldSkipPackage(package.name, skipPackagePrefixes) {
+            printInfo(string `Skipping package: ${package.name}`);
+            continue;
+        }
+        filteredPackages.push(package);
+    }
+    printStats(string `After filtering: ${filteredPackages.length()} packages (excluded ${packages.length() - filteredPackages.length()} packages)`);
+    return filteredPackages;
 }
 
 isolated function getTotalPullCount(Package package) returns error? {

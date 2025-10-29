@@ -12,4 +12,5 @@ Config.toml
 
 resources/
 results/
+*report/
 .DS_Store
