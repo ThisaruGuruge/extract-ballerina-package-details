@@ -18,6 +18,16 @@ jobs:
       with:
         version: 2201.12.10
 
+    - name: Cache Ballerina dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.ballerina
+          target
+        key: ${{ runner.os }}-ballerina-${{ hashFiles('Dependencies.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-ballerina-
+
     - name: Check code formatting
       run: |
         bal format
@@ -32,3 +42,10 @@ jobs:
 
     - name: Run tests
       run: bal test
+
+    - name: Run OSV Scanner for dependency vulnerabilities
+      uses: google/osv-scanner/actions/scanner@v1.9.0
+      continue-on-error: true
+      with:
+        scan-args: |
+          --lockfile=Dependencies.toml
