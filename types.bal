@@ -65,3 +65,9 @@ type PackageWithoutKeywords record {|
     int createdDate;
     string createdDateFormatted;
 |};
+
+type KeywordAnalysisResult record {|
+    map<string[]>? keywords;
+    map<string[]>? filteredKeywords;
+    map<string[]>? categorizedKeywords;
+|};

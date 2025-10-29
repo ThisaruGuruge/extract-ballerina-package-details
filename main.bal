@@ -30,34 +30,16 @@ public function main() {
         printInfo(string `Target organization: ${orgName}`);
         printInfo(string `Configuration: Package List=${needPackageListFromCentral}, Pull Count=${needTotalPullCount}, Keywords=${needKeywordAnalysis}, CSV Export=${needCsvExport}`);
 
-        Package[] packages = check retrievePackageList();
-        printStats(string `Retrieved ${packages.length()} packages from ${orgName}`);
+        Package[] packages = check retrieveAndEnrichPackages();
+        KeywordAnalysisResult analysis = check performKeywordAnalysis(packages);
 
-        if needTotalPullCount {
-            getPullCount(packages);
-        }
-
-        // Prepare data output
         DataOutput dataOutput = {
-            packages: packages
+            packages,
+            keywords: analysis.keywords,
+            filteredKeywords: analysis.filteredKeywords,
+            categorizedKeywords: analysis.categorizedKeywords
         };
 
-        if needKeywordAnalysis {
-            printProgress("Analyzing package keywords and creating categorization");
-            [map<string[]>, map<string[]>] [keywordMap, filteredKeywordMap] = analyzeKeywords(packages);
-            map<string[]> categorizedKeywordMap = categorizeKeywords(keywordMap);
-
-            printStats(string `Found ${keywordMap.keys().length()} unique keywords across all packages`);
-            printStats(string `Filtered to ${filteredKeywordMap.keys().length()} keywords (appearing in ≥${minPackagesPerKeyword} packages)`);
-
-            dataOutput.keywords = keywordMap;
-            dataOutput.filteredKeywords = filteredKeywordMap;
-            dataOutput.categorizedKeywords = categorizedKeywordMap;
-
-            printSuccess("Keyword analysis completed");
-        }
-
-        // Write all data in batch
         check writeDataBatch(dataOutput);
         printSuccess(string `All data exported to ${RESULTS_DIR}/ directory`);
 
@@ -69,7 +51,49 @@ public function main() {
     }
 }
 
+isolated function retrieveAndEnrichPackages() returns Package[]|error {
+    Package[] packages = check retrievePackageList();
+    printStats(string `Retrieved ${packages.length()} packages from ${orgName}`);
+
+    if needTotalPullCount {
+        getPullCount(packages);
+    }
+
+    return packages;
+}
+
+isolated function performKeywordAnalysis(Package[] packages) returns KeywordAnalysisResult|error {
+    if !needKeywordAnalysis {
+        return {
+            keywords: (),
+            filteredKeywords: (),
+            categorizedKeywords: ()
+        };
+    }
+
+    printProgress("Analyzing package keywords and creating categorization");
+    [map<string[]>, map<string[]>] [keywordMap, filteredKeywordMap] = analyzeKeywords(packages);
+    map<string[]> categorizedKeywordMap = categorizeKeywords(keywordMap);
+
+    printStats(string `Found ${keywordMap.keys().length()} unique keywords across all packages`);
+    printStats(string `Filtered to ${filteredKeywordMap.keys().length()} keywords (appearing in ≥${minPackagesPerKeyword} packages)`);
+
+    printSuccess("Keyword analysis completed");
+
+    return {
+        keywords: keywordMap,
+        filteredKeywords: filteredKeywordMap,
+        categorizedKeywords: categorizedKeywordMap
+    };
+}
+
 isolated function validateConfiguration() returns error? {
+    check validateBasicConfig();
+    check validateDateConfig();
+    check validateGoogleSheetsConfig();
+}
+
+isolated function validateBasicConfig() returns error? {
     if orgName.trim().length() == 0 {
         return error("Organization name cannot be empty");
     }
@@ -85,8 +109,9 @@ isolated function validateConfiguration() returns error? {
     if minPackagesPerKeyword < 1 {
         return error("minPackagesPerKeyword must be at least 1");
     }
+}
 
-    // Validate date formats if provided
+isolated function validateDateConfig() returns error? {
     string? pullStartDate = pullStatStartDate;
     if pullStartDate is string && 'string:trim(pullStartDate).length() > 0 {
         if !isValidISODate(pullStartDate) {
@@ -100,8 +125,9 @@ isolated function validateConfiguration() returns error? {
             return error("pullStatEndDate must be in ISO date format (YYYY-MM-DD)");
         }
     }
+}
 
-    // Validate Google Sheets configuration if export is enabled
+isolated function validateGoogleSheetsConfig() returns error? {
     if needGoogleSheetExport {
         GoogleSheetConfig? authConfig = googleSheetAuthConfig;
         if authConfig is () {
