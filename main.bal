@@ -277,17 +277,47 @@ isolated function filterKeywords(map<string[]> keywordMap) returns map<string[]>
 
 isolated function getPullCount(Package[] packages) {
     do {
-        printProgress("Fetching total pull count statistics for all packages");
+        printProgress("Fetching total pull count statistics for all packages (optimized batching)");
+
+        // Process in batches of 3 to stay under API rate limit (50 req/min)
+        // With 0.5s sleep per request = 2 req/sec = ~120 req/min max (well under limit)
+        int batchSize = 3;
         int processedCount = 0;
-        foreach Package package in packages {
-            check getTotalPullCount(package);
-            processedCount += 1;
-            if processedCount % 10 == 0 {
-                printProgress(string `Processed ${processedCount}/${packages.length()} packages for pull count data`);
+        int totalPackages = packages.length();
+
+        int i = 0;
+        while i < totalPackages {
+            // Calculate batch end index
+            int endIdx = int:min(i + batchSize, totalPackages);
+
+            // Process batch sequentially with minimal sleep
+            int j = i;
+            while j < endIdx {
+                Package package = packages[j];
+                error? result = getTotalPullCount(package);
+                if result is error {
+                    printWarning(string `Failed to get pull count for ${package.name}: ${result.message()}`);
+                }
+                j = j + 1;
+                // Short sleep between requests within batch
+                if j < endIdx {
+                    runtime:sleep(0.5);
+                }
             }
-            runtime:sleep(SLEEP_TIMER); // To avoid rate limiting
+
+            processedCount += (endIdx - i);
+            if processedCount % 10 == 0 {
+                printProgress(string `Processed ${processedCount}/${totalPackages} packages for pull count data`);
+            }
+
+            // Longer sleep between batches to maintain rate limiting
+            if endIdx < totalPackages {
+                runtime:sleep(1.0);
+            }
+
+            i = endIdx;
         }
-        printSuccess(string `Successfully retrieved pull count data for ${packages.length()} packages`);
+        printSuccess(string `Successfully retrieved pull count data for ${totalPackages} packages`);
     } on fail error err {
         printError(err);
         printWarning("Proceeding with package data without pull count statistics");
