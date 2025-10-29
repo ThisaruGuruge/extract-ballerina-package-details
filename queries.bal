@@ -9,6 +9,7 @@ query ($orgName: String!, $limit: Int!, $offset: Int!) {
             name
             URL
             version
+            createdDate
             totalPullCount
             pullCount
             keywords

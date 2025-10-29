@@ -1,0 +1,21 @@
+orgName = "my_ballerina_org" # Ballerina Org Name
+limit = 1000 # Number of connectors to pull
+offset = 0 # Start of the connector list (If the limit is 100 and offset is 100, you'll get connectors from 101 to 200)
+
+needPackageListFromCentral = true # Disable if you want to use an existing list (locally)
+needTotalPullCount = true # Disable to call separate API to get the total pull count
+needKeywordAnalysis = true # Disable to just receive the connector list
+needCsvExport = true # Export as CSV
+minPackagesPerKeyword = 1 # When processing keywords in keyword analysis, filter keywords by usage count
+skipPackagePrefixes = ["health."] # Enable to skip packages with a given prefix
+pullStatStartDate = "2023-01-01" # Filter the pull count by date - Start date
+pullStatEndDate = "2025-01-01" # Filter the pull count by date - End date
+
+needGoogleSheetExport = true # Export to Google Sheets
+spreadsheetId = "spreadsheet ID" # Google spreadsheet ID - Can be obtained by sheet URL
+sheetId = "123456789" # Sheet ID to where the results should be dumped
+
+[googleSheetAuthConfig]
+clientId = "Google Sheets Auth - Client ID"
+clientSecret = "Google Sheets Auth - Client Secret"
+refreshToken = "Google Sheets Auth - Refresh Token"

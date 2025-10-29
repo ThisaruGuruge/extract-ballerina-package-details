@@ -23,45 +23,50 @@ final graphql:Client ballerinaCentral = check new (BALLERINA_CENTRAL_GRAPHQL_URL
 
 final string timestamp = check getTimestamp();
 
-public function main() returns error? {
-    check validateConfiguration();
-    printInfo("Starting Ballerina Central package analysis");
-    printInfo(string `Target organization: ${orgName}`);
-    printInfo(string `Configuration: Package List=${needPackageListFromCentral}, Pull Count=${needTotalPullCount}, Keywords=${needKeywordAnalysis}, CSV Export=${needCsvExport}`);
+public function main() {
+    do {
+        check validateConfiguration();
+        printInfo("Starting Ballerina Central package analysis");
+        printInfo(string `Target organization: ${orgName}`);
+        printInfo(string `Configuration: Package List=${needPackageListFromCentral}, Pull Count=${needTotalPullCount}, Keywords=${needKeywordAnalysis}, CSV Export=${needCsvExport}`);
 
-    Package[] packages = check retrievePackageList();
-    printStats(string `Retrieved ${packages.length()} packages from ${orgName}`);
+        Package[] packages = check retrievePackageList();
+        printStats(string `Retrieved ${packages.length()} packages from ${orgName}`);
 
-    if needTotalPullCount {
-        getPullCount(packages);
+        if needTotalPullCount {
+            getPullCount(packages);
+        }
+
+        // Prepare data output
+        DataOutput dataOutput = {
+            packages: packages
+        };
+
+        if needKeywordAnalysis {
+            printProgress("Analyzing package keywords and creating categorization");
+            [map<string[]>, map<string[]>] [keywordMap, filteredKeywordMap] = analyzeKeywords(packages);
+            map<string[]> categorizedKeywordMap = categorizeKeywords(keywordMap);
+
+            printStats(string `Found ${keywordMap.keys().length()} unique keywords across all packages`);
+            printStats(string `Filtered to ${filteredKeywordMap.keys().length()} keywords (appearing in ≥${minPackagesPerKeyword} packages)`);
+
+            dataOutput.keywords = keywordMap;
+            dataOutput.filteredKeywords = filteredKeywordMap;
+            dataOutput.categorizedKeywords = categorizedKeywordMap;
+
+            printSuccess("Keyword analysis completed");
+        }
+
+        // Write all data in batch
+        check writeDataBatch(dataOutput);
+        printSuccess(string `All data exported to ${RESULTS_DIR}/ directory`);
+
+        printSuccess(string `Analysis complete!`);
+        printStats(string `Total packages analyzed: ${packages.length()}`);
+    } on fail error err {
+        printError(err);
+        printWarning("Application terminated due to error");
     }
-
-    // Prepare data output
-    DataOutput dataOutput = {
-        packages: packages
-    };
-
-    if needKeywordAnalysis {
-        printProgress("Analyzing package keywords and creating categorization");
-        [map<string[]>, map<string[]>] [keywordMap, filteredKeywordMap] = analyzeKeywords(packages);
-        map<string[]> categorizedKeywordMap = categorizeKeywords(keywordMap);
-
-        printStats(string `Found ${keywordMap.keys().length()} unique keywords across all packages`);
-        printStats(string `Filtered to ${filteredKeywordMap.keys().length()} keywords (appearing in ≥${minPackagesPerKeyword} packages)`);
-
-        dataOutput.keywords = keywordMap;
-        dataOutput.filteredKeywords = filteredKeywordMap;
-        dataOutput.categorizedKeywords = categorizedKeywordMap;
-
-        printSuccess("Keyword analysis completed");
-    }
-
-    // Write all data in batch
-    check writeDataBatch(dataOutput);
-    printSuccess(string `All data exported to ${RESULTS_DIR}/ directory`);
-
-    printSuccess(string `Analysis complete!`);
-    printStats(string `Total packages analyzed: ${packages.length()}`);
 }
 
 isolated function validateConfiguration() returns error? {
@@ -141,64 +146,77 @@ isolated function retrievePackageList() returns Package[]|error {
 }
 
 isolated function retrievePackageListFromFile() returns Package[]|error {
-    string latestExistingResultsDirectory = check getLatestExistingResultsDirectory();
-    string latestResultsFile = check file:joinPath(latestExistingResultsDirectory, packageListFilePath);
-    printInfo(string `Loading package list from existing file: ${latestResultsFile}${JSON_FILE_EXTENSION}`);
-    return (check io:fileReadJson(string `${latestResultsFile}${JSON_FILE_EXTENSION}`)).fromJsonWithType();
+    do {
+        string latestExistingResultsDirectory = check getLatestExistingResultsDirectory();
+        string latestResultsFile = check file:joinPath(latestExistingResultsDirectory, packageListFilePath);
+        printInfo(string `Loading package list from existing file: ${latestResultsFile}${JSON_FILE_EXTENSION}`);
+        return (check io:fileReadJson(string `${latestResultsFile}${JSON_FILE_EXTENSION}`)).fromJsonWithType();
+    } on fail error err {
+        return error("Failed to load package list from file", err);
+    }
 }
 
 isolated function retrievePackageListFromCentral() returns Package[]|error {
-    printProgress(string `Fetching package list from Ballerina Central for organization: ${orgName}`);
-    printInfo(string `Requesting packages with limit: ${'limit}, offset: ${offset}`);
+    do {
+        printProgress(string `Fetching package list from Ballerina Central for organization: ${orgName}`);
+        printInfo(string `Requesting packages with limit: ${'limit}, offset: ${offset}`);
 
-    RetrievePackageListInput input = {
-        orgName,
-        'limit,
-        offset
-    };
-    PackageListResponse packageListResponse = check ballerinaCentral->execute(GET_PACKAGE_LIST_QUERY, input);
-    Package[] packages = packageListResponse.data.packages.packages;
-
-    printStats(string `Retrieved ${packages.length()} packages from Central API`);
-
-    Package[] transformedPackages = from Package package in packages
-        select {
-            name: package.name,
-            URL: string `${BALLERINA_CENTRAL_URL}${package.URL}`,
-            version: package.version,
-            totalPullCount: package.totalPullCount,
-            keywords: package.keywords,
-            pullCount: package.pullCount
+        RetrievePackageListInput input = {
+            orgName,
+            'limit,
+            offset
         };
+        PackageListResponse packageListResponse = check ballerinaCentral->execute(GET_PACKAGE_LIST_QUERY, input);
+        Package[] packages = packageListResponse.data.packages.packages;
 
-    if skipPackagePrefixes.length() > 0 {
-        printInfo(string `Filtering out packages with prefixes: ${skipPackagePrefixes.toString()}`);
-        Package[] filteredPackages = [];
-        foreach Package package in transformedPackages {
-            if shouldSkipPackage(package.name, skipPackagePrefixes) {
-                printInfo(string `Skipping package: ${package.name}`);
-                continue;
+        printStats(string `Retrieved ${packages.length()} packages from Central API`);
+
+        Package[] transformedPackages = from Package package in packages
+            select {
+                name: package.name,
+                URL: string `${BALLERINA_CENTRAL_URL}${package.URL}`,
+                version: package.version,
+                totalPullCount: package.totalPullCount,
+                keywords: package.keywords,
+                pullCount: package.pullCount,
+                createdDate: package.createdDate
+            };
+
+        if skipPackagePrefixes.length() > 0 {
+            printInfo(string `Filtering out packages with prefixes: ${skipPackagePrefixes.toString()}`);
+            Package[] filteredPackages = [];
+            foreach Package package in transformedPackages {
+                if shouldSkipPackage(package.name, skipPackagePrefixes) {
+                    printInfo(string `Skipping package: ${package.name}`);
+                    continue;
+                }
+                filteredPackages.push(package);
             }
-            filteredPackages.push(package);
+            printStats(string `After filtering: ${filteredPackages.length()} packages (excluded ${transformedPackages.length() - filteredPackages.length()} packages)`);
+            return filteredPackages;
         }
-        printStats(string `After filtering: ${filteredPackages.length()} packages (excluded ${transformedPackages.length() - filteredPackages.length()} packages)`);
-        return filteredPackages;
-    }
 
-    printInfo("Processing all packages");
-    return transformedPackages;
+        printInfo("Processing all packages");
+        return transformedPackages;
+    } on fail error err {
+        return error("Failed to retrieve package list from Ballerina Central", err);
+    }
 }
 
 isolated function getTotalPullCount(Package package) returns error? {
-    TotalPullCountInput input = {
-        orgName,
-        packageName: package.name,
-        version: package.version,
-        pullStatStartDate,
-        pullStatEndDate
-    };
-    TotalPullCountResponse response = check ballerinaCentral->execute(GET_TOTAL_PULL_COUNT_QUERY, input);
-    package.totalPullCount = response?.data?.package?.totalPullCount;
+    do {
+        TotalPullCountInput input = {
+            orgName,
+            packageName: package.name,
+            version: package.version,
+            pullStatStartDate,
+            pullStatEndDate
+        };
+        TotalPullCountResponse response = check ballerinaCentral->execute(GET_TOTAL_PULL_COUNT_QUERY, input);
+        package.totalPullCount = response?.data?.package?.totalPullCount;
+    } on fail error err {
+        return error(string `Failed to get pull count for package: ${package.name}`, err);
+    }
 }
 
 isolated function analyzeKeywords(Package[] packages) returns [map<string[]>, map<string[]>] {

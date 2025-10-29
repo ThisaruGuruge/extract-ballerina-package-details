@@ -80,14 +80,16 @@ isolated function categorizeKeywords(map<string[]> keywords) returns map<string[
 
 isolated function transformToJsonData(Package[]|map<string[]> data) returns json {
     if data is Package[] {
-        // Transform packages to remove keywords field
+        // Transform packages to remove keywords field and add formatted date
         PackageWithoutKeywords[] packagesWithoutKeywords = from Package package in data
             select {
                 name: package.name,
                 URL: package.URL,
                 version: package.version,
                 totalPullCount: package.totalPullCount,
-                pullCount: package.pullCount
+                pullCount: package.pullCount,
+                createdDate: package.createdDate,
+                createdDateFormatted: formatTimestampToDate(package.createdDate)
             };
         return packagesWithoutKeywords.toJson();
     }
@@ -95,7 +97,7 @@ isolated function transformToJsonData(Package[]|map<string[]> data) returns json
     return data.toJson();
 }
 
-isolated function writeData(string filePath, Package[]|map<string[]> data, string? googleSpreadsheetId = (), string? sheetName = ()) returns error? {
+isolated function writeData(string filePath, Package[]|map<string[]> data, string? googleSpreadsheetId = (), string? sheetName = (), boolean isFirstSheet = false) returns error? {
     string resultDirectory = check file:joinPath(RESULTS_DIR, timestamp, filePath);
     string parentDir = check file:parentPath(string `${resultDirectory}${JSON_FILE_EXTENSION}`);
     check file:createDir(parentDir, file:RECURSIVE);
@@ -104,40 +106,46 @@ isolated function writeData(string filePath, Package[]|map<string[]> data, strin
     json jsonData = transformToJsonData(data);
     check writeToJsonFile(string `${resultDirectory}${JSON_FILE_EXTENSION}`, jsonData);
 
-    if needCsvExport || needGoogleSheetExport {
+    if needCsvExport {
         string[][] csvData = transformToCsvData(data);
-        if needCsvExport {
-            check writeToCsvFile(string `${resultDirectory}${CSV_FILE_EXTENSION}`, csvData);
-        }
-        if needGoogleSheetExport && googleSpreadsheetId is string {
-            string tabName = sheetName is string ? sheetName : filePath;
-            check writeToSheet(googleSpreadsheetId, tabName, csvData);
-        }
+        check writeToCsvFile(string `${resultDirectory}${CSV_FILE_EXTENSION}`, csvData);
+    }
+
+    if needGoogleSheetExport && googleSpreadsheetId is string {
+        string tabName = sheetName is string ? sheetName : filePath;
+        // Use sheet-specific transformation with hyperlinks for packages
+        string[][] sheetData = data is Package[] ? transformPackagesToSheetData(data) : transformToCsvData(data);
+        check writeToSheet(googleSpreadsheetId, tabName, sheetData, isFirstSheet);
     }
 }
 
 isolated function writeDataBatch(DataOutput dataOutput) returns error? {
-    // Get or create the spreadsheet once for all writes
-    string? googleSpreadsheetId = ();
-    if needGoogleSheetExport {
-        googleSpreadsheetId = check getOrCreateSpreadsheet();
-    }
+    do {
+        // Get or create the spreadsheet once for all writes
+        string? googleSpreadsheetId = ();
+        if needGoogleSheetExport {
+            googleSpreadsheetId = check getOrCreateSpreadsheet();
+        }
 
-    check writeData(packageListFilePath, dataOutput.packages, googleSpreadsheetId, "Packages");
+        // Write packages first (this will rename the default sheet)
+        check writeData(packageListFilePath, dataOutput.packages, googleSpreadsheetId, "Packages", true);
 
-    map<string[]>? keywords = dataOutput.keywords;
-    if keywords is map<string[]> {
-        check writeData(keywordsFilePath, keywords, googleSpreadsheetId, "Keywords");
-    }
+        map<string[]>? keywords = dataOutput.keywords;
+        if keywords is map<string[]> {
+            check writeData(keywordsFilePath, keywords, googleSpreadsheetId, "Keywords", false);
+        }
 
-    map<string[]>? filteredKeywords = dataOutput.filteredKeywords;
-    if filteredKeywords is map<string[]> {
-        check writeData(filteredKeywordsFilePath, filteredKeywords, googleSpreadsheetId, "Filtered Keywords");
-    }
+        map<string[]>? filteredKeywords = dataOutput.filteredKeywords;
+        if filteredKeywords is map<string[]> {
+            check writeData(filteredKeywordsFilePath, filteredKeywords, googleSpreadsheetId, "Filtered Keywords", false);
+        }
 
-    map<string[]>? categorizedKeywords = dataOutput.categorizedKeywords;
-    if categorizedKeywords is map<string[]> {
-        check writeData(categorizedKeywordsFilePath, categorizedKeywords, googleSpreadsheetId, "Categorized Keywords");
+        map<string[]>? categorizedKeywords = dataOutput.categorizedKeywords;
+        if categorizedKeywords is map<string[]> {
+            check writeData(categorizedKeywordsFilePath, categorizedKeywords, googleSpreadsheetId, "Categorized Keywords", false);
+        }
+    } on fail error err {
+        return error("Failed to write data batch", err);
     }
 }
 
@@ -178,21 +186,48 @@ isolated function transformToCsvData(Package[]|map<string[]> data) returns strin
 isolated function transformPackagesToCsvData(Package[] packages) returns string[][] {
     string[][] csvData = [];
     // Add header row (excluding keywords since they have separate sheets)
-    csvData.push(["name", "URL", "version", "totalPullCount", "pullCount"]);
+    csvData.push(["name", "URL", "version", "totalPullCount", "pullCount", "createdDate"]);
 
     // Add data rows
     foreach Package package in packages {
         int? totalPullCount = package.totalPullCount;
         string totalPullCountStr = totalPullCount is int ? totalPullCount.toString() : "N/A";
+        string createdDateStr = formatTimestampToDate(package.createdDate);
         csvData.push([
             package.name,
             package.URL,
             package.version,
             totalPullCountStr,
-            package.pullCount.toString()
+            package.pullCount.toString(),
+            createdDateStr
         ]);
     }
     return csvData;
+}
+
+isolated function transformPackagesToSheetData(Package[] packages) returns string[][] {
+    string[][] sheetData = [];
+    // Add header row (name with hyperlink, no separate URL column)
+    sheetData.push(["name", "version", "totalPullCount", "pullCount", "createdDate"]);
+
+    // Add data rows with hyperlink formula
+    foreach Package package in packages {
+        int? totalPullCount = package.totalPullCount;
+        string totalPullCountStr = totalPullCount is int ? totalPullCount.toString() : "N/A";
+        string createdDateStr = formatTimestampToDate(package.createdDate);
+
+        // Create HYPERLINK formula for package name
+        string hyperlinkFormula = string `=HYPERLINK("${package.URL}", "${package.name}")`;
+
+        sheetData.push([
+            hyperlinkFormula,
+            package.version,
+            totalPullCountStr,
+            package.pullCount.toString(),
+            createdDateStr
+        ]);
+    }
+    return sheetData;
 }
 
 isolated function transformKeywordsToCsvData(map<string[]> data) returns string[][] {
@@ -253,8 +288,20 @@ isolated function shouldSkipPackage(string packageName, string[] skipPackagePref
     return false;
 }
 
+isolated function formatCivilToDate(time:Civil civil) returns string {
+    // Format as YYYY-MM-DD
+    return string `${civil.year}-${civil.month}-${civil.day}`;
+}
+
 isolated function getTimestamp() returns string|error {
     time:Utc now = time:utcNow();
     time:Civil nowCivil = time:utcToCivil(now);
-    return string `${nowCivil.year}-${nowCivil.month}-${nowCivil.day}`;
+    return formatCivilToDate(nowCivil);
+}
+
+isolated function formatTimestampToDate(int timestamp) returns string {
+    // Convert Unix timestamp (seconds) to time:Utc tuple [seconds, fraction]
+    time:Utc utc = [timestamp, 0.0d];
+    time:Civil civil = time:utcToCivil(utc);
+    return formatCivilToDate(civil);
 }

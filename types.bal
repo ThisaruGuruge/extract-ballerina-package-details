@@ -13,6 +13,7 @@ type Package record {
     int? totalPullCount = ();
     int pullCount;
     string[] keywords = [];
+    int createdDate;
 };
 
 # Data type returned by the Ballerina Central API when retrieving the package list
@@ -61,4 +62,6 @@ type PackageWithoutKeywords record {|
     string version;
     int? totalPullCount = ();
     int pullCount;
+    int createdDate;
+    string createdDateFormatted;
 |};
