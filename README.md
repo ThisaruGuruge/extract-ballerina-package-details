@@ -394,6 +394,42 @@ This project is licensed under the Apache License 2.0.
 - **Google Sheets fails?** Verify OAuth credentials and permissions
 - **Rate limiting?** The app handles this automatically; don't modify `SLEEP_TIMER`
 
+## GitHub Actions Automation
+
+This repository includes a GitHub Actions workflow to run the analysis automatically.
+
+### Manual Execution
+
+1. Go to **Actions** → **Run Package Analysis** → **Run workflow**
+2. Configure parameters:
+   - **orgName**: Organization to analyze (e.g., `ballerina`, `ballerinax`)
+   - **limit**: Maximum packages to retrieve (default: 1000)
+   - **needTotalPullCount**: Fetch pull statistics (default: false)
+   - **needGoogleSheetExport**: Export to Google Sheets (default: false)
+   - **needCsvExport**: Export CSV files (default: true)
+
+### Scheduled Execution
+
+The workflow runs automatically every Sunday at midnight UTC (configurable in `.github/workflows/run-analysis.yml`).
+
+### GitHub Secrets Setup
+
+To enable Google Sheets export, configure these secrets in **Settings → Secrets and variables → Actions**:
+
+| Secret Name | Description |
+|-------------|-------------|
+| `GOOGLE_CLIENT_ID` | OAuth 2.0 Client ID from Google Cloud Console |
+| `GOOGLE_CLIENT_SECRET` | OAuth 2.0 Client Secret |
+| `GOOGLE_REFRESH_TOKEN` | Refresh token from OAuth 2.0 Playground |
+| `GOOGLE_SPREADSHEET_ID` | (Optional) Existing spreadsheet ID to append to |
+
+### Viewing Results
+
+Analysis results are uploaded as artifacts:
+- Navigate to **Actions** → Select workflow run → **Artifacts** section
+- Download `analysis-results-{orgName}-{run-number}.zip`
+- Results are retained for 30 days
+
 ## Support
 
 - **Issues**: [Create an issue](https://github.com/your-repo/issues)

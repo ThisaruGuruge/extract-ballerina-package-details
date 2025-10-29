@@ -1,0 +1,111 @@
+name: Run Package Analysis
+
+on:
+  workflow_dispatch:
+    inputs:
+      orgName:
+        description: 'Organization to analyze (e.g., ballerina, ballerinax)'
+        required: true
+        default: 'ballerina'
+        type: string
+      limit:
+        description: 'Maximum number of packages to retrieve'
+        required: false
+        default: '1000'
+        type: string
+      needTotalPullCount:
+        description: 'Fetch pull count statistics for each package'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      needGoogleSheetExport:
+        description: 'Export results to Google Sheets'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      needCsvExport:
+        description: 'Export results as CSV files'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+  schedule:
+    # Run weekly on Sunday at midnight UTC
+    - cron: '0 0 * * 0'
+
+jobs:
+  run-analysis:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ballerina
+        uses: ballerina-platform/setup-ballerina@v1.1.3
+        with:
+          version: 2201.12.10
+
+      - name: Cache Ballerina dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.ballerina
+            target
+          key: ${{ runner.os }}-ballerina-${{ hashFiles('Dependencies.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-ballerina-
+
+      - name: Set default values for scheduled runs
+        if: github.event_name == 'schedule'
+        run: |
+          echo "ORG_NAME=ballerina" >> $GITHUB_ENV
+          echo "LIMIT=1000" >> $GITHUB_ENV
+          echo "NEED_PULL_COUNT=false" >> $GITHUB_ENV
+          echo "NEED_GSHEET=false" >> $GITHUB_ENV
+          echo "NEED_CSV=true" >> $GITHUB_ENV
+
+      - name: Set values from workflow inputs
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "ORG_NAME=${{ github.event.inputs.orgName }}" >> $GITHUB_ENV
+          echo "LIMIT=${{ github.event.inputs.limit }}" >> $GITHUB_ENV
+          echo "NEED_PULL_COUNT=${{ github.event.inputs.needTotalPullCount }}" >> $GITHUB_ENV
+          echo "NEED_GSHEET=${{ github.event.inputs.needGoogleSheetExport }}" >> $GITHUB_ENV
+          echo "NEED_CSV=${{ github.event.inputs.needCsvExport }}" >> $GITHUB_ENV
+
+      - name: Run package analysis
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+          GOOGLE_SPREADSHEET_ID: ${{ secrets.GOOGLE_SPREADSHEET_ID }}
+        run: |
+          bal run -- \
+            -CorgName="${ORG_NAME}" \
+            -Climit="${LIMIT}" \
+            -CneedPackageListFromCentral=true \
+            -CneedTotalPullCount="${NEED_PULL_COUNT}" \
+            -CneedKeywordAnalysis=true \
+            -CneedCsvExport="${NEED_CSV}" \
+            -CneedGoogleSheetExport="${NEED_GSHEET}" \
+            -CgoogleSheetAuthConfig.clientId="${GOOGLE_CLIENT_ID}" \
+            -CgoogleSheetAuthConfig.clientSecret="${GOOGLE_CLIENT_SECRET}" \
+            -CgoogleSheetAuthConfig.refreshToken="${GOOGLE_REFRESH_TOKEN}" \
+            -CspreadsheetId="${GOOGLE_SPREADSHEET_ID}"
+
+      - name: Upload analysis results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: analysis-results-${{ env.ORG_NAME }}-${{ github.run_number }}
+          path: results/
+          retention-days: 30
