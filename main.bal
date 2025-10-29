@@ -306,46 +306,55 @@ isolated function getPullCount(Package[] packages) {
         printProgress("Fetching total pull count statistics for all packages (optimized batching)");
 
         // Process in batches of 3 to stay under API rate limit (50 req/min)
-        // With 0.5s sleep per request = 2 req/sec = ~120 req/min max (well under limit)
         int batchSize = 3;
-        int processedCount = 0;
         int totalPackages = packages.length();
+        int processedCount = 0;
 
         int i = 0;
         while i < totalPackages {
-            // Calculate batch end index
             int endIdx = int:min(i + batchSize, totalPackages);
 
-            // Process batch sequentially with minimal sleep
-            int j = i;
-            while j < endIdx {
-                Package package = packages[j];
-                error? result = getTotalPullCount(package);
-                if result is error {
-                    printWarning(string `Failed to get pull count for ${package.name}: ${result.message()}`);
-                }
-                j = j + 1;
-                // Short sleep between requests within batch
-                if j < endIdx {
-                    runtime:sleep(0.5);
-                }
-            }
+            processPullCountBatch(packages, i, endIdx);
 
             processedCount += (endIdx - i);
-            if processedCount % 10 == 0 {
-                printProgress(string `Processed ${processedCount}/${totalPackages} packages for pull count data`);
-            }
-
-            // Longer sleep between batches to maintain rate limiting
-            if endIdx < totalPackages {
-                runtime:sleep(1.0);
-            }
+            reportBatchProgress(processedCount, totalPackages, endIdx);
 
             i = endIdx;
         }
+
         printSuccess(string `Successfully retrieved pull count data for ${totalPackages} packages`);
     } on fail error err {
         printError(err);
         printWarning("Proceeding with package data without pull count statistics");
+    }
+}
+
+isolated function processPullCountBatch(Package[] packages, int startIdx, int endIdx) {
+    // Process batch sequentially with minimal sleep between requests
+    // Sleep: 0.5s per request = 2 req/sec = ~120 req/min (well under 50 req/min limit)
+    int j = startIdx;
+    while j < endIdx {
+        Package package = packages[j];
+        error? result = getTotalPullCount(package);
+        if result is error {
+            printWarning(string `Failed to get pull count for ${package.name}: ${result.message()}`);
+        }
+        j = j + 1;
+
+        if j < endIdx {
+            runtime:sleep(0.5);
+        }
+    }
+}
+
+isolated function reportBatchProgress(int processedCount, int totalPackages, int endIdx) {
+    // Report progress every 10 packages
+    if processedCount % 10 == 0 {
+        printProgress(string `Processed ${processedCount}/${totalPackages} packages for pull count data`);
+    }
+
+    // Longer sleep between batches to maintain rate limiting
+    if endIdx < totalPackages {
+        runtime:sleep(1.0);
     }
 }
