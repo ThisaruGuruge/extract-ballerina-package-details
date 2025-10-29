@@ -2,8 +2,8 @@ import ballerina/test;
 
 @test:Config
 function testFormatTimestampToDate() {
-    // Test Unix timestamp conversion
-    string result = formatTimestampToDate(1585699200);
+    // Test Unix timestamp conversion (API returns milliseconds)
+    string result = formatTimestampToDate(1585699200000);
     test:assertEquals(result, "2020-4-1", "Should format Unix timestamp correctly");
 }
 
@@ -156,7 +156,7 @@ function testTransformPackagesToCsvData() {
             version: "2.9.0",
             totalPullCount: 1500000,
             pullCount: 50000,
-            createdDate: 1585699200
+            createdDate: 1585699200000
         },
         {
             name: "io",
@@ -164,7 +164,7 @@ function testTransformPackagesToCsvData() {
             version: "1.6.0",
             totalPullCount: (),
             pullCount: 25000,
-            createdDate: 1557619200
+            createdDate: 1557619200000
         }
     ];
 

@@ -173,6 +173,10 @@ isolated function writeToCsvFile(string filePath, Package[]|string[][] data) ret
     printSuccess(string `CSV data written to ${filePath}`);
 }
 
+// ============================================
+// Data Transformation Functions
+// ============================================
+
 isolated function transformToCsvData(Package[]|map<string[]> data) returns string[][] {
     string[][] csvData = [];
     if data is map<string[]> {
@@ -239,6 +243,10 @@ isolated function transformKeywordsToCsvData(map<string[]> data) returns string[
     return rotateMatrix90Degrees(csvData.sort(array:DESCENDING));
 }
 
+// ============================================
+// Matrix Manipulation Utilities
+// ============================================
+
 isolated function rotateMatrix90Degrees(string[][] matrix) returns string[][] {
     if matrix.length() == 0 {
         return [];
@@ -287,6 +295,10 @@ isolated function initializeMatrix(int rows, int cols) returns string[][] {
     return matrix;
 }
 
+// ============================================
+// Utility Functions
+// ============================================
+
 isolated function shouldSkipPackage(string packageName, string[] skipPackagePrefixes) returns boolean {
     foreach string skipPackagePrefix in skipPackagePrefixes {
         if packageName.startsWith(skipPackagePrefix) {
@@ -308,8 +320,9 @@ isolated function getTimestamp() returns string|error {
 }
 
 isolated function formatTimestampToDate(int timestamp) returns string {
-    // Convert Unix timestamp (seconds) to time:Utc tuple [seconds, fraction]
-    time:Utc utc = [timestamp, 0.0d];
+    // API returns timestamps in milliseconds, convert to seconds
+    // Divide by 1000 to convert milliseconds to seconds
+    time:Utc utc = [timestamp / 1000, 0.0d];
     time:Civil civil = time:utcToCivil(utc);
     return formatCivilToDate(civil);
 }

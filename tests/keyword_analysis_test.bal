@@ -8,7 +8,7 @@ Package testPackage1 = {
     totalPullCount: 1000,
     pullCount: 100,
     keywords: ["network", "http", "rest"],
-    createdDate: 1585699200
+    createdDate: 1585699200000
 };
 
 Package testPackage2 = {
@@ -18,7 +18,7 @@ Package testPackage2 = {
     totalPullCount: 500,
     pullCount: 50,
     keywords: ["network", "graphql", "api"],
-    createdDate: 1585699200
+    createdDate: 1585699200000
 };
 
 Package testPackage3 = {
@@ -28,7 +28,7 @@ Package testPackage3 = {
     totalPullCount: 800,
     pullCount: 80,
     keywords: ["database", "sql"],
-    createdDate: 1585699200
+    createdDate: 1585699200000
 };
 
 Package testPackageNoKeywords = {
@@ -38,7 +38,7 @@ Package testPackageNoKeywords = {
     totalPullCount: 100,
     pullCount: 10,
     keywords: [],
-    createdDate: 1585699200
+    createdDate: 1585699200000
 };
 
 @test:Config
