@@ -181,3 +181,147 @@ function testCategorizeKeywordsMultipleLevels() {
         test:assertTrue(networkChildren.indexOf("tcp") != (), "Should contain 'tcp'");
     }
 }
+
+// ============================================
+// Connector Summary Tests
+// ============================================
+
+@test:Config
+function testExtractVendorFromKeyword() {
+    string packageName = "mypackage";
+    string[] keywords = ["Vendor/Twilio", "messaging"];
+
+    string result = extractVendor(packageName, keywords);
+
+    test:assertEquals(result, "Twilio", "Should extract vendor from Vendor/ keyword");
+}
+
+@test:Config
+function testExtractVendorFromKeywordLowercase() {
+    string packageName = "mypackage";
+    string[] keywords = ["vendor/stripe", "payment"];
+
+    string result = extractVendor(packageName, keywords);
+
+    test:assertEquals(result, "stripe", "Should extract vendor from lowercase vendor/ keyword");
+}
+
+@test:Config
+function testExtractVendorFromPackageName() {
+    string packageName = "twilio.sms";
+    string[] keywords = ["messaging"];
+
+    string result = extractVendor(packageName, keywords);
+
+    test:assertEquals(result, "twilio", "Should extract vendor from package name pattern");
+}
+
+@test:Config
+function testExtractVendorFromPackageNameMultipleDots() {
+    string packageName = "googleapis.sheets.v4";
+    string[] keywords = ["spreadsheet"];
+
+    string result = extractVendor(packageName, keywords);
+
+    test:assertEquals(result, "googleapis", "Should extract first part before dot as vendor");
+}
+
+@test:Config
+function testExtractVendorDefault() {
+    string packageName = "http";
+    string[] keywords = ["network"];
+
+    string result = extractVendor(packageName, keywords);
+
+    test:assertEquals(result, "http", "Should default to package name when no vendor found");
+}
+
+@test:Config
+function testExtractAreaCategoryFromAreaKeyword() {
+    string[] keywords = ["Area/Communication", "messaging"];
+
+    string result = extractAreaCategory(keywords);
+
+    test:assertEquals(result, "Communication", "Should extract category from Area/ keyword");
+}
+
+@test:Config
+function testExtractAreaCategoryFromCategoryKeyword() {
+    string[] keywords = ["Category/Databases", "sql"];
+
+    string result = extractAreaCategory(keywords);
+
+    test:assertEquals(result, "Databases", "Should extract category from Category/ keyword");
+}
+
+@test:Config
+function testExtractAreaCategoryCaseInsensitive() {
+    string[] keywords = ["Area/ecommerce", "shopping"];
+
+    string result = extractAreaCategory(keywords);
+
+    test:assertEquals(result, "eCommerce", "Should match category case-insensitively");
+}
+
+@test:Config
+function testExtractAreaCategoryDefaultOther() {
+    string[] keywords = ["messaging", "network"];
+
+    string result = extractAreaCategory(keywords);
+
+    test:assertEquals(result, "Other", "Should default to Other when no matching category");
+}
+
+@test:Config
+function testExtractAreaCategoryInvalidCategory() {
+    string[] keywords = ["Area/InvalidCategory", "test"];
+
+    string result = extractAreaCategory(keywords);
+
+    test:assertEquals(result, "Other", "Should return Other for invalid category");
+}
+
+@test:Config
+function testTransformPackagesToConnectorSummary() {
+    Package connectorPackage = {
+        name: "twilio.sms",
+        URL: "https://central.ballerina.io/ballerinax/twilio.sms",
+        version: "3.0.0",
+        totalPullCount: 5000,
+        pullCount: 300,
+        keywords: ["Vendor/Twilio", "Area/Communication", "messaging"],
+        createdDate: 1609459200000
+    };
+
+    string[][] result = transformPackagesToConnectorSummary([connectorPackage]);
+
+    test:assertEquals(result.length(), 2, "Should have header + 1 data row");
+    test:assertEquals(result[0], ["Connector Name", "Latest Version", "Last Updated", "Area/Category", "Vendor", "API Version", "Link"], "Header should be correct");
+
+    test:assertEquals(result[1][0], "twilio.sms", "Connector name should be correct");
+    test:assertEquals(result[1][1], "3.0.0", "Version should be correct");
+    test:assertEquals(result[1][2], "2021-1-1", "Date should be formatted correctly");
+    test:assertEquals(result[1][3], "Communication", "Area/Category should be extracted from keyword");
+    test:assertEquals(result[1][4], "Twilio", "Vendor should be extracted from keyword");
+    test:assertEquals(result[1][5], "N/A", "API Version should be N/A");
+    test:assertTrue(result[1][6].includes("HYPERLINK"), "Link should have HYPERLINK formula");
+}
+
+@test:Config
+function testTransformPackagesToConnectorSummaryNoKeywords() {
+    Package connectorPackage = {
+        name: "custom.connector",
+        URL: "https://central.ballerina.io/org/custom.connector",
+        version: "1.0.0",
+        totalPullCount: (),
+        pullCount: 100,
+        keywords: [],
+        createdDate: 1622505600000
+    };
+
+    string[][] result = transformPackagesToConnectorSummary([connectorPackage]);
+
+    test:assertEquals(result.length(), 2, "Should have header + 1 data row");
+    test:assertEquals(result[1][3], "Other", "Should default to Other category");
+    test:assertEquals(result[1][4], "custom", "Should extract vendor from package name");
+}
