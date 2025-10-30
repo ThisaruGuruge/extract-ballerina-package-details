@@ -50,9 +50,9 @@ isolated function writeToSheet(string targetSpreadsheetId, string name, string[]
         }
 
         if existingSheet is sheets:Sheet {
-            // Sheet exists, clear its contents
-            printInfo(string `Sheet '${name}' already exists, clearing contents`);
-            _ = check googleSheet->clearAllBySheetName(targetSpreadsheetId, name);
+            // Sheet exists, clear a large range to remove all old data
+            printInfo(string `Sheet '${name}' already exists, clearing old data before writing ${data.length()} rows`);
+            _ = check googleSheet->clearRange(targetSpreadsheetId, name, "A1:ZZ10000");
         } else if isFirstSheet && existingSheets.length() > 0 {
             // Rename the default sheet instead of creating a new sheet
             sheets:Sheet defaultSheet = existingSheets[0];
@@ -67,6 +67,7 @@ isolated function writeToSheet(string targetSpreadsheetId, string name, string[]
 
         // Write the data to the sheet
         if data.length() > 0 {
+            printInfo(string `Writing ${data.length()} rows to sheet '${name}'`);
             sheets:Range range = {
                 a1Notation: "A1",
                 values: data
@@ -74,6 +75,8 @@ isolated function writeToSheet(string targetSpreadsheetId, string name, string[]
             // Use USER_ENTERED to interpret formulas (like HYPERLINK)
             _ = check googleSheet->setRange(targetSpreadsheetId, name, range, "USER_ENTERED");
             printSuccess(string `Data written to sheet '${name}' - ${data.length()} rows written`);
+        } else {
+            printWarning(string `No data to write to sheet '${name}' - data array is empty`);
         }
     } on fail error err {
         return error(string `Failed to write data to Google Sheet: ${name}`, err);

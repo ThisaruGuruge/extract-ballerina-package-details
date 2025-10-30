@@ -80,18 +80,19 @@ isolated function categorizeKeywords(map<string[]> keywords) returns map<string[
 
 isolated function transformToJsonData(Package[]|map<string[]> data) returns json {
     if data is Package[] {
-        // Transform packages to remove keywords field and add formatted date
-        PackageWithoutKeywords[] packagesWithoutKeywords = from Package package in data
+        // Transform packages to add formatted date while preserving all fields including keywords
+        PackageWithoutKeywords[] packagesForExport = from Package package in data
             select {
                 name: package.name,
                 URL: package.URL,
                 version: package.version,
                 totalPullCount: package.totalPullCount,
                 pullCount: package.pullCount,
+                keywords: package.keywords,
                 createdDate: package.createdDate,
                 createdDateFormatted: formatTimestampToDate(package.createdDate)
             };
-        return packagesWithoutKeywords.toJson();
+        return packagesForExport.toJson();
     }
     // For keyword maps, return as-is
     return data.toJson();
@@ -113,8 +114,15 @@ isolated function writeData(string filePath, Package[]|map<string[]> data, strin
 
     if needGoogleSheetExport && googleSpreadsheetId is string {
         string tabName = sheetName is string ? sheetName : filePath;
-        // Use sheet-specific transformation with hyperlinks for packages
-        string[][] sheetData = data is Package[] ? transformPackagesToSheetData(data) : transformToCsvData(data);
+        // Use sheet-specific transformations with better formatting
+        string[][] sheetData = [];
+        if data is Package[] {
+            sheetData = transformPackagesToSheetData(data);
+        } else {
+            // For keyword maps, use spread format (one item per cell)
+            sheetData = transformKeywordsToSheetData(data);
+        }
+        printInfo(string `Transformed ${tabName}: ${sheetData.length()} rows`);
         check writeToSheet(googleSpreadsheetId, tabName, sheetData, isFirstSheet);
     }
 }
@@ -130,16 +138,19 @@ isolated function writeDataBatch(DataOutput dataOutput) returns error? {
         // Write packages first (this will rename the default sheet)
         check writeData(packageListFilePath, dataOutput.packages, googleSpreadsheetId, "Packages", true);
 
+        // Write unfiltered keywords to JSON/CSV only (not to Google Sheets - redundant with Filtered Keywords)
         map<string[]>? keywords = dataOutput.keywords;
         if keywords is map<string[]> {
-            check writeData(keywordsFilePath, keywords, googleSpreadsheetId, "Keywords", false);
+            check writeData(keywordsFilePath, keywords, (), "Keywords", false);
         }
 
+        // Write filtered keywords to all outputs including Google Sheets
         map<string[]>? filteredKeywords = dataOutput.filteredKeywords;
         if filteredKeywords is map<string[]> {
             check writeData(filteredKeywordsFilePath, filteredKeywords, googleSpreadsheetId, "Filtered Keywords", false);
         }
 
+        // Write categorized keywords to all outputs including Google Sheets
         map<string[]>? categorizedKeywords = dataOutput.categorizedKeywords;
         if categorizedKeywords is map<string[]> {
             check writeData(categorizedKeywordsFilePath, categorizedKeywords, googleSpreadsheetId, "Categorized Keywords", false);
@@ -178,19 +189,18 @@ isolated function writeToCsvFile(string filePath, Package[]|string[][] data) ret
 // ============================================
 
 isolated function transformToCsvData(Package[]|map<string[]> data) returns string[][] {
-    string[][] csvData = [];
     if data is map<string[]> {
-        csvData = transformKeywordsToCsvData(data);
+        // Use same format as Google Sheets for consistency
+        return transformKeywordsToCsvData(data);
     } else {
-        csvData = transformPackagesToCsvData(data);
+        return transformPackagesToCsvData(data);
     }
-    return csvData;
 }
 
 isolated function transformPackagesToCsvData(Package[] packages) returns string[][] {
     string[][] csvData = [];
-    // Add header row (excluding keywords since they have separate sheets)
-    csvData.push(["name", "URL", "version", "totalPullCount", "pullCount", "createdDate"]);
+    // Add header row with proper titles
+    csvData.push(["Name", "URL", "Version", "Total Pull Count", "Pull Count", "Created Date"]);
 
     // Add data rows
     foreach Package package in packages {
@@ -211,8 +221,8 @@ isolated function transformPackagesToCsvData(Package[] packages) returns string[
 
 isolated function transformPackagesToSheetData(Package[] packages) returns string[][] {
     string[][] sheetData = [];
-    // Add header row (name with hyperlink, no separate URL column)
-    sheetData.push(["name", "version", "totalPullCount", "pullCount", "createdDate"]);
+    // Add header row with proper titles
+    sheetData.push(["Name", "Version", "Total Pull Count", "Pull Count", "Created Date"]);
 
     // Add data rows with hyperlink formula
     foreach Package package in packages {
@@ -234,65 +244,70 @@ isolated function transformPackagesToSheetData(Package[] packages) returns strin
     return sheetData;
 }
 
-isolated function transformKeywordsToCsvData(map<string[]> data) returns string[][] {
-    string[][] csvData = [];
+isolated function transformKeywordsToSheetData(map<string[]> data) returns string[][] {
+    string[][] sheetData = [];
+
+    // Add header row
+    sheetData.push(["Keyword", "Package Count", "Packages"]);
+
+    // Create rows with keyword, count, and packages spread across cells
+    // Sort by package count (descending) for better readability
+    string[][] keywordRows = [];
     foreach string keyword in data.keys() {
         string[] packages = data.get(keyword);
-        csvData.push([keyword, ...packages]);
+        string[] row = [keyword, packages.length().toString()];
+        // Add each package in its own cell
+        foreach string package in packages {
+            row.push(package);
+        }
+        keywordRows.push(row);
     }
-    return rotateMatrix90Degrees(csvData.sort(array:DESCENDING));
+
+    // Sort by package count (second column) in descending order
+    keywordRows = keywordRows.sort(array:DESCENDING, isolated function(string[] row) returns int {
+        int|error count = int:fromString(row[1]);
+        return count is int ? count : 0;
+    });
+
+    // Add sorted rows to sheet data
+    foreach string[] row in keywordRows {
+        sheetData.push(row);
+    }
+
+    return sheetData;
 }
 
-// ============================================
-// Matrix Manipulation Utilities
-// ============================================
+isolated function transformKeywordsToCsvData(map<string[]> data) returns string[][] {
+    // Use the same non-rotated format as Google Sheets for consistency
+    string[][] csvData = [];
 
-isolated function rotateMatrix90Degrees(string[][] matrix) returns string[][] {
-    if matrix.length() == 0 {
-        return [];
-    }
+    // Add header row
+    csvData.push(["Keyword", "Package Count", "Packages"]);
 
-    int rows = matrix.length();
-    int maxCols = findMaxColumns(matrix);
-
-    if maxCols == 0 {
-        return [];
-    }
-
-    // Pre-allocate rotated matrix with proper dimensions
-    string[][] rotated = initializeMatrix(maxCols, rows);
-
-    // Rotate 90 degrees clockwise, handling variable-length rows
-    foreach int i in 0 ..< rows {
-        string[] row = matrix[i];
-        foreach int j in 0 ..< row.length() {
-            rotated[j][rows - 1 - i] = row[j];
+    // Create rows with keyword, count, and packages spread across cells
+    string[][] keywordRows = [];
+    foreach string keyword in data.keys() {
+        string[] packages = data.get(keyword);
+        string[] row = [keyword, packages.length().toString()];
+        // Add each package in its own cell
+        foreach string package in packages {
+            row.push(package);
         }
+        keywordRows.push(row);
     }
 
-    return rotated;
-}
+    // Sort by package count (second column) in descending order
+    keywordRows = keywordRows.sort(array:DESCENDING, isolated function(string[] row) returns int {
+        int|error count = int:fromString(row[1]);
+        return count is int ? count : 0;
+    });
 
-isolated function findMaxColumns(string[][] matrix) returns int {
-    int maxCols = 0;
-    foreach string[] row in matrix {
-        if row.length() > maxCols {
-            maxCols = row.length();
-        }
+    // Add sorted rows to CSV data
+    foreach string[] row in keywordRows {
+        csvData.push(row);
     }
-    return maxCols;
-}
 
-isolated function initializeMatrix(int rows, int cols) returns string[][] {
-    string[][] matrix = [];
-    foreach int i in 0 ..< rows {
-        string[] row = [];
-        foreach int j in 0 ..< cols {
-            row.push("");
-        }
-        matrix.push(row);
-    }
-    return matrix;
+    return csvData;
 }
 
 // ============================================

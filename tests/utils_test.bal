@@ -78,76 +78,6 @@ function testCategorizeKeywordsNoSlash() {
 }
 
 @test:Config
-function testRotateMatrix90DegreesBasic() {
-    string[][] matrix = [
-        ["a", "b", "c"],
-        ["d", "e", "f"]
-    ];
-
-    string[][] result = rotateMatrix90Degrees(matrix);
-
-    test:assertEquals(result.length(), 3, "Rotated matrix should have 3 rows");
-    test:assertEquals(result[0].length(), 2, "Each row should have 2 columns");
-
-    // 90-degree clockwise rotation:
-    // Input:  a b c     Output:  d a
-    //         d e f              e b
-    //                            f c
-    test:assertEquals(result[0][0], "d", "First row, first column");
-    test:assertEquals(result[0][1], "a", "First row, second column");
-    test:assertEquals(result[1][0], "e", "Second row, first column");
-    test:assertEquals(result[1][1], "b", "Second row, second column");
-    test:assertEquals(result[2][0], "f", "Third row, first column");
-    test:assertEquals(result[2][1], "c", "Third row, second column");
-}
-
-@test:Config
-function testRotateMatrix90DegreesEmpty() {
-    string[][] matrix = [];
-    string[][] result = rotateMatrix90Degrees(matrix);
-    test:assertEquals(result.length(), 0, "Should return empty matrix for empty input");
-}
-
-@test:Config
-function testRotateMatrix90DegreesJaggedArray() {
-    // Test with rows of different lengths
-    string[][] matrix = [
-        ["a", "b", "c"],
-        ["d", "e"],
-        ["f"]
-    ];
-
-    string[][] result = rotateMatrix90Degrees(matrix);
-
-    test:assertEquals(result.length(), 3, "Should handle jagged arrays");
-    test:assertEquals(result[0].length(), 3, "All rows should have 3 columns");
-
-    // After rotation of jagged array:
-    // Input:  a b c     Output:  f d a
-    //         d e                  e b
-    //         f                      c
-    test:assertEquals(result[0][0], "f", "First row, first column");
-    test:assertEquals(result[0][1], "d", "First row, second column");
-    test:assertEquals(result[0][2], "a", "First row, third column");
-    test:assertEquals(result[1][0], "", "Second row, first column (empty padding)");
-    test:assertEquals(result[1][1], "e", "Second row, second column");
-    test:assertEquals(result[1][2], "b", "Second row, third column");
-    test:assertEquals(result[2][0], "", "Third row, first column (empty padding)");
-    test:assertEquals(result[2][1], "", "Third row, second column (empty padding)");
-    test:assertEquals(result[2][2], "c", "Third row, third column");
-}
-
-@test:Config
-function testRotateMatrix90DegreesSingleElement() {
-    string[][] matrix = [["single"]];
-    string[][] result = rotateMatrix90Degrees(matrix);
-
-    test:assertEquals(result.length(), 1, "Should have 1 row");
-    test:assertEquals(result[0].length(), 1, "Should have 1 column");
-    test:assertEquals(result[0][0], "single", "Element should be preserved");
-}
-
-@test:Config
 function testTransformPackagesToCsvData() {
     Package[] packages = [
         {
@@ -171,7 +101,7 @@ function testTransformPackagesToCsvData() {
     string[][] result = transformPackagesToCsvData(packages);
 
     test:assertEquals(result.length(), 3, "Should have header + 2 data rows");
-    test:assertEquals(result[0], ["name", "URL", "version", "totalPullCount", "pullCount", "createdDate"], "Header should be correct");
+    test:assertEquals(result[0], ["Name", "URL", "Version", "Total Pull Count", "Pull Count", "Created Date"], "Header should be correct");
 
     test:assertEquals(result[1][0], "http", "First package name");
     test:assertEquals(result[1][3], "1500000", "First package totalPullCount");
@@ -191,7 +121,11 @@ function testTransformKeywordsToCsvData() {
 
     string[][] result = transformKeywordsToCsvData(keywords);
 
-    // Result should be rotated matrix
-    test:assertTrue(result.length() > 0, "Should have rows");
-    test:assertTrue(result[0].length() == 2, "Should have 2 columns after rotation");
+    // Should have header + data rows (non-rotated format)
+    test:assertEquals(result.length(), 3, "Should have header + 2 data rows");
+    test:assertEquals(result[0], ["Keyword", "Package Count", "Packages"], "Should have proper headers");
+
+    // Check that data rows have keyword, count, and packages
+    test:assertTrue(result[1].length() >= 3, "Data row should have at least 3 columns (keyword, count, packages)");
+    test:assertTrue(result[2].length() >= 3, "Data row should have at least 3 columns (keyword, count, packages)");
 }

@@ -68,7 +68,7 @@ function testTransformPackagesToSheetData() {
     string[][] result = transformPackagesToSheetData(packages);
 
     test:assertEquals(result.length(), 3, "Should have header + 2 data rows");
-    test:assertEquals(result[0], ["name", "version", "totalPullCount", "pullCount", "createdDate"], "Header should be correct");
+    test:assertEquals(result[0], ["Name", "Version", "Total Pull Count", "Pull Count", "Created Date"], "Header should be correct");
 
     // First package
     test:assertTrue(result[1][0].includes("HYPERLINK"), "First row should have hyperlink formula");
@@ -89,7 +89,7 @@ function testTransformPackagesToSheetDataEmpty() {
     string[][] result = transformPackagesToSheetData(packages);
 
     test:assertEquals(result.length(), 1, "Should only have header row");
-    test:assertEquals(result[0], ["name", "version", "totalPullCount", "pullCount", "createdDate"], "Header should be present");
+    test:assertEquals(result[0], ["Name", "Version", "Total Pull Count", "Pull Count", "Created Date"], "Header should be present");
 }
 
 @test:Config
@@ -99,7 +99,7 @@ function testTransformToCsvDataWithPackages() {
     string[][] result = transformToCsvData(packages);
 
     test:assertEquals(result.length(), 2, "Should have header + 1 data row");
-    test:assertEquals(result[0], ["name", "URL", "version", "totalPullCount", "pullCount", "createdDate"], "Should have package headers");
+    test:assertEquals(result[0], ["Name", "URL", "Version", "Total Pull Count", "Pull Count", "Created Date"], "Should have package headers");
     test:assertEquals(result[1][0], "kafka", "Should have correct package name in data row");
     test:assertEquals(result[1][2], "3.5.0", "Should have correct version");
 }
@@ -149,66 +149,6 @@ function testFormatCivilToDateWithSingleDigits() {
     string result = formatCivilToDate(civil);
 
     test:assertEquals(result, "2024-1-5", "Should handle single digit month and day");
-}
-
-@test:Config
-function testFindMaxColumns() {
-    string[][] matrix = [
-        ["a", "b", "c"],
-        ["d"],
-        ["e", "f", "g", "h", "i"]
-    ];
-
-    int result = findMaxColumns(matrix);
-
-    test:assertEquals(result, 5, "Should find maximum column count");
-}
-
-@test:Config
-function testFindMaxColumnsEmpty() {
-    string[][] matrix = [];
-
-    int result = findMaxColumns(matrix);
-
-    test:assertEquals(result, 0, "Should return 0 for empty matrix");
-}
-
-@test:Config
-function testFindMaxColumnsWithEmptyRows() {
-    string[][] matrix = [
-        [],
-        ["a"],
-        []
-    ];
-
-    int result = findMaxColumns(matrix);
-
-    test:assertEquals(result, 1, "Should handle empty rows");
-}
-
-@test:Config
-function testInitializeMatrix() {
-    string[][] result = initializeMatrix(3, 2);
-
-    test:assertEquals(result.length(), 3, "Should have 3 rows");
-    test:assertEquals(result[0].length(), 2, "Each row should have 2 columns");
-    test:assertEquals(result[0][0], "", "All cells should be empty strings");
-    test:assertEquals(result[2][1], "", "All cells should be empty strings");
-}
-
-@test:Config
-function testInitializeMatrixZeroRows() {
-    string[][] result = initializeMatrix(0, 5);
-
-    test:assertEquals(result.length(), 0, "Should handle zero rows");
-}
-
-@test:Config
-function testInitializeMatrixZeroColumns() {
-    string[][] result = initializeMatrix(3, 0);
-
-    test:assertEquals(result.length(), 3, "Should have rows");
-    test:assertEquals(result[0].length(), 0, "Rows should be empty");
 }
 
 @test:Config

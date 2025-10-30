@@ -26,20 +26,8 @@ type PackageListResponse record {|
     |} data;
 |};
 
-type TotalPullCountInput record {|
-    string orgName;
-    string packageName;
-    string version;
-    string? pullStatStartDate = ();
-    string? pullStatEndDate = ();
-|};
-
-type TotalPullCountResponse record {|
-    record {|
-        record {|
-            int? totalPullCount;
-        |}? package;
-    |}? data;
+type BatchedPullCountResponse record {|
+    map<json> data;
 |};
 
 type GoogleSheetConfig record {|
@@ -62,6 +50,7 @@ type PackageWithoutKeywords record {|
     string version;
     int? totalPullCount = ();
     int pullCount;
+    string[] keywords = [];
     int createdDate;
     string createdDateFormatted;
 |};

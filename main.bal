@@ -56,7 +56,7 @@ isolated function retrieveAndEnrichPackages() returns Package[]|error {
     printStats(string `Retrieved ${packages.length()} packages from ${orgName}`);
 
     if needTotalPullCount {
-        getPullCount(packages);
+        check getPullCount(packages);
     }
 
     return packages;
@@ -237,22 +237,6 @@ isolated function applyPackageFilters(Package[] packages) returns Package[] {
     return filteredPackages;
 }
 
-isolated function getTotalPullCount(Package package) returns error? {
-    do {
-        TotalPullCountInput input = {
-            orgName,
-            packageName: package.name,
-            version: package.version,
-            pullStatStartDate,
-            pullStatEndDate
-        };
-        TotalPullCountResponse response = check ballerinaCentral->execute(GET_TOTAL_PULL_COUNT_QUERY, input);
-        package.totalPullCount = response?.data?.package?.totalPullCount;
-    } on fail error err {
-        return error(string `Failed to get pull count for package: ${package.name}`, err);
-    }
-}
-
 isolated function analyzeKeywords(Package[] packages) returns [map<string[]>, map<string[]>] {
     printProgress("Categorizing keywords by package");
     map<string[]> keywordMap = categorize(packages);
@@ -301,60 +285,133 @@ isolated function filterKeywords(map<string[]> keywordMap) returns map<string[]>
     return filteredKeywordMap;
 }
 
-isolated function getPullCount(Package[] packages) {
-    do {
-        printProgress("Fetching total pull count statistics for all packages (optimized batching)");
+isolated function getPullCount(Package[] packages) returns error? {
+    printProgress("Fetching total pull count statistics for all packages (batched)");
 
-        // Process in batches of 3 to stay under API rate limit (50 req/min)
-        int batchSize = 3;
-        int totalPackages = packages.length();
-        int processedCount = 0;
+    // Batch packages to reduce API calls (10 packages per request)
+    // Rate limit: 50 req/min with 1.5s sleep = 40 req/min
+    // 10 packages per batch = 10x fewer API calls
+    int batchSize = 10;
+    int totalPackages = packages.length();
+    int processedCount = 0;
 
-        int i = 0;
-        while i < totalPackages {
-            int endIdx = int:min(i + batchSize, totalPackages);
+    int i = 0;
+    while i < totalPackages {
+        int endIdx = int:min(i + batchSize, totalPackages);
+        Package[] batch = packages.slice(i, endIdx);
 
-            processPullCountBatch(packages, i, endIdx);
+        // Fetch pull counts for entire batch with retry logic
+        check getBatchedPullCountsWithRetry(batch, i, endIdx, totalPackages);
 
-            processedCount += (endIdx - i);
-            reportBatchProgress(processedCount, totalPackages, endIdx);
-
-            i = endIdx;
-        }
-
-        printSuccess(string `Successfully retrieved pull count data for ${totalPackages} packages`);
-    } on fail error err {
-        printError(err);
-        printWarning("Proceeding with package data without pull count statistics");
-    }
-}
-
-isolated function processPullCountBatch(Package[] packages, int startIdx, int endIdx) {
-    // Process batch sequentially with minimal sleep between requests
-    // Sleep: 0.5s per request = 2 req/sec = ~120 req/min (well under 50 req/min limit)
-    int j = startIdx;
-    while j < endIdx {
-        Package package = packages[j];
-        error? result = getTotalPullCount(package);
-        if result is error {
-            printWarning(string `Failed to get pull count for ${package.name}: ${result.message()}`);
-        }
-        j = j + 1;
-
-        if j < endIdx {
-            runtime:sleep(0.5);
-        }
-    }
-}
-
-isolated function reportBatchProgress(int processedCount, int totalPackages, int endIdx) {
-    // Report progress every 10 packages
-    if processedCount % 10 == 0 {
+        processedCount += batch.length();
         printProgress(string `Processed ${processedCount}/${totalPackages} packages for pull count data`);
+
+        // Sleep to respect rate limiting
+        // Add extra delay every 50 batches to prevent connection issues
+        if endIdx < totalPackages {
+            decimal sleepTime = SLEEP_TIMER;
+            if processedCount / batchSize % 50 == 0 {
+                sleepTime = 5.0; // Longer pause every 50 batches
+                printInfo(string `Taking extended break after ${processedCount} packages to prevent rate limiting`);
+            }
+            runtime:sleep(sleepTime);
+        }
+
+        i = endIdx;
     }
 
-    // Longer sleep between batches to maintain rate limiting
-    if endIdx < totalPackages {
-        runtime:sleep(1.0);
+    printSuccess(string `Successfully retrieved pull count data for ${totalPackages} packages in ${(totalPackages + batchSize - 1) / batchSize} batched requests`);
+}
+
+isolated function getBatchedPullCountsWithRetry(Package[] packages, int startIdx, int endIdx, int totalPackages) returns error? {
+    int maxRetries = 3;
+    int attempt = 0;
+
+    while attempt < maxRetries {
+        error? result = getBatchedPullCounts(packages);
+
+        if result is () {
+            // Success
+            return;
+        }
+
+        // Failed, decide whether to retry
+        attempt += 1;
+        if attempt < maxRetries {
+            decimal backoffTime = 3.0 * <decimal>attempt; // 3s, 6s, 9s
+            printWarning(string `Batch ${startIdx}-${endIdx} failed (attempt ${attempt}/${maxRetries}): ${result.message()}`);
+            printInfo(string `Retrying in ${backoffTime} seconds...`);
+            runtime:sleep(backoffTime);
+        } else {
+            // All retries exhausted
+            string errorMsg = string `Batch processing failed at packages ${startIdx}-${endIdx} (total: ${totalPackages}). Exiting to prevent partial data.`;
+            error batchError = error(errorMsg, result);
+            printError(batchError);
+            return batchError;
+        }
     }
+}
+
+isolated function getBatchedPullCounts(Package[] packages) returns error? {
+    // Build a batched GraphQL query with aliases for each package
+    string query = buildBatchedPullCountQuery(packages);
+
+    do {
+        // Execute the batched query
+        BatchedPullCountResponse response = check ballerinaCentral->execute(query);
+
+        // Extract pull counts from response and assign to packages
+        int idx = 0;
+        foreach Package package in packages {
+            string alias = string `pkg_${idx}`;
+            json? packageData = response.data[alias];
+
+            if packageData is map<json> {
+                json? pullCountValue = packageData["totalPullCount"];
+                if pullCountValue is int {
+                    package.totalPullCount = pullCountValue;
+                }
+            }
+            idx += 1;
+        }
+    } on fail error err {
+        return error(string `Failed to get batched pull counts: ${err.message()}`, err);
+    }
+}
+
+isolated function buildBatchedPullCountQuery(Package[] packages) returns string {
+    // Build a GraphQL query with multiple aliased package queries
+    string[] queryParts = [];
+    int idx = 0;
+
+    foreach Package package in packages {
+        string alias = string `pkg_${idx}`;
+
+        // Build date parameters if configured
+        string dateStartParam = "";
+        string? startDate = pullStatStartDate;
+        if startDate is string {
+            dateStartParam = string `, pullStatStartDate: "${startDate}"`;
+        }
+
+        string dateEndParam = "";
+        string? endDate = pullStatEndDate;
+        if endDate is string {
+            dateEndParam = string `, pullStatEndDate: "${endDate}"`;
+        }
+
+        string packageQuery = string `
+            ${alias}: package(
+                orgName: "${orgName}",
+                packageName: "${package.name}",
+                version: "${package.version}"${dateStartParam}${dateEndParam}
+            ) {
+                totalPullCount
+            }`;
+
+        queryParts.push(packageQuery);
+        idx += 1;
+    }
+
+    return string `query { ${string:'join(" ", ...queryParts)} }`;
 }

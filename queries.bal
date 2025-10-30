@@ -17,22 +17,3 @@ query ($orgName: String!, $limit: Int!, $offset: Int!) {
     }
 }
 `;
-
-const string GET_TOTAL_PULL_COUNT_QUERY = string `
-query getPackageInfo(
-    $orgName: String!
-    $packageName: String!
-    $version: String!
-    $pullStatStartDate: String
-    $pullStatEndDate: String
-) {
-    package(
-      orgName: $orgName,
-      packageName: $packageName,
-      version: $version,
-      pullStatStartDate: $pullStatStartDate,
-      pullStatEndDate: $pullStatEndDate
-    ) {
-        totalPullCount
-    }
-}`;

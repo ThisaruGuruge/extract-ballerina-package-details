@@ -130,51 +130,6 @@ function testTransformPackagesToCsvDataWithNullValues() {
 }
 
 @test:Config
-function testRotateMatrixAllEmptyStrings() {
-    string[][] matrix = [
-        ["", "", ""],
-        ["", "", ""]
-    ];
-
-    string[][] result = rotateMatrix90Degrees(matrix);
-
-    test:assertEquals(result.length(), 3, "Should have 3 rows after rotation");
-    test:assertEquals(result[0].length(), 2, "Should have 2 columns after rotation");
-    test:assertEquals(result[0][0], "", "Empty strings should be preserved");
-}
-
-@test:Config
-function testRotateMatrixSingleRow() {
-    string[][] matrix = [["a", "b", "c", "d"]];
-
-    string[][] result = rotateMatrix90Degrees(matrix);
-
-    test:assertEquals(result.length(), 4, "Should have 4 rows after rotation");
-    test:assertEquals(result[0].length(), 1, "Should have 1 column after rotation");
-    test:assertEquals(result[0][0], "a", "First element");
-    test:assertEquals(result[1][0], "b", "Second element");
-    test:assertEquals(result[2][0], "c", "Third element");
-    test:assertEquals(result[3][0], "d", "Fourth element");
-}
-
-@test:Config
-function testRotateMatrixSingleColumn() {
-    string[][] matrix = [
-        ["a"],
-        ["b"],
-        ["c"]
-    ];
-
-    string[][] result = rotateMatrix90Degrees(matrix);
-
-    test:assertEquals(result.length(), 1, "Should have 1 row after rotation");
-    test:assertEquals(result[0].length(), 3, "Should have 3 columns after rotation");
-    test:assertEquals(result[0][0], "c", "First element (from bottom)");
-    test:assertEquals(result[0][1], "b", "Second element");
-    test:assertEquals(result[0][2], "a", "Third element (from top)");
-}
-
-@test:Config
 function testShouldSkipPackageMultiplePrefixes() {
     string[] prefixes = ["health.", "internal.", "test."];
 
@@ -246,10 +201,12 @@ function testTransformKeywordsToCsvDataSingleKeyword() {
 
     string[][] result = transformKeywordsToCsvData(keywords);
 
-    // After rotation: keyword as first row, package as second row
-    test:assertEquals(result.length(), 2, "Should have 2 rows after rotation (keyword + package)");
-    test:assertTrue(result.some(row => row.some(cell => cell == "singleton")), "Should contain the keyword");
-    test:assertTrue(result.some(row => row.some(cell => cell == "pkg1")), "Should contain the package");
+    // Non-rotated format: header + 1 data row
+    test:assertEquals(result.length(), 2, "Should have header + 1 data row");
+    test:assertEquals(result[0], ["Keyword", "Package Count", "Packages"], "Should have proper headers");
+    test:assertEquals(result[1][0], "singleton", "First column should be keyword");
+    test:assertEquals(result[1][1], "1", "Second column should be package count");
+    test:assertEquals(result[1][2], "pkg1", "Third column should be package");
 }
 
 @test:Config
@@ -267,31 +224,12 @@ function testTransformKeywordsToCsvDataManyPackages() {
 
     string[][] result = transformKeywordsToCsvData(keywords);
 
-    // After rotation and transformation, should have many rows (one per package)
-    test:assertEquals(result.length(), 101, "Should have keyword + 100 packages as rows after rotation");
-    test:assertTrue(result.some(row => row.some(cell => cell == "popular")), "Should contain 'popular' keyword");
-}
-
-@test:Config
-function testInitializeMatrixLarge() {
-    string[][] result = initializeMatrix(100, 100);
-
-    test:assertEquals(result.length(), 100, "Should create 100 rows");
-    test:assertEquals(result[0].length(), 100, "Should create 100 columns");
-    test:assertEquals(result[50][50], "", "All cells should be empty");
-}
-
-@test:Config
-function testFindMaxColumnsAllSameLength() {
-    string[][] matrix = [
-        ["a", "b", "c"],
-        ["d", "e", "f"],
-        ["g", "h", "i"]
-    ];
-
-    int result = findMaxColumns(matrix);
-
-    test:assertEquals(result, 3, "Should return column count when all rows are equal");
+    // Non-rotated format: header + 1 data row with all packages in separate columns
+    test:assertEquals(result.length(), 2, "Should have header + 1 data row");
+    test:assertEquals(result[0], ["Keyword", "Package Count", "Packages"], "Should have proper headers");
+    test:assertEquals(result[1][0], "popular", "First column should be keyword");
+    test:assertEquals(result[1][1], "100", "Second column should be package count");
+    test:assertEquals(result[1].length(), 102, "Should have 102 columns (keyword + count + 100 packages)");
 }
 
 @test:Config
