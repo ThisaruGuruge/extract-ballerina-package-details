@@ -231,6 +231,7 @@ isolated function extractVendor(string packageName, string[] keywords) returns s
 isolated function extractAreaCategory(string[] keywords) returns string {
     // Define valid categories
     string[] validCategories = [
+        "AI",
         "Observability",
         "eCommerce",
         "Communication",
