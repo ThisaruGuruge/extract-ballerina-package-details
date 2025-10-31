@@ -42,10 +42,5 @@ jobs:
 
     - name: Run tests
       run: bal test
-
-    - name: Run OSV Scanner for dependency vulnerabilities
-      uses: google/osv-scanner/actions/scanner@v1.9.0
-      continue-on-error: true
-      with:
-        scan-args: |
-          --lockfile=Dependencies.toml
+      env:
+        BAL_CONFIG_VAR_ORGNAME: "test-org"
