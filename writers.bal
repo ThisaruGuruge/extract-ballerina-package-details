@@ -37,6 +37,9 @@ isolated function writeData(string filePath, Package[]|map<string[]> data, strin
 
 isolated function writeDataBatch(DataOutput dataOutput) returns error? {
     do {
+        // Sort packages by last updated date (descending), then by total pull count (descending)
+        Package[] sortedPackages = sortPackages(dataOutput.packages);
+
         // Get or create the spreadsheet once for all writes
         string? googleSpreadsheetId = ();
         if needGoogleSheetExport {
@@ -44,11 +47,11 @@ isolated function writeDataBatch(DataOutput dataOutput) returns error? {
         }
 
         // Write packages first (this will rename the default sheet)
-        check writeData(packageListFilePath, dataOutput.packages, googleSpreadsheetId, "Packages", true);
+        check writeData(packageListFilePath, sortedPackages, googleSpreadsheetId, "Packages", true);
 
         // Write connector summary sheet (Google Sheets only - different view of packages)
         if needGoogleSheetExport && googleSpreadsheetId is string {
-            string[][] connectorSummaryData = transformPackagesToConnectorSummary(dataOutput.packages);
+            string[][] connectorSummaryData = transformPackagesToConnectorSummary(sortedPackages);
             printInfo(string `Transformed Connector Summary: ${connectorSummaryData.length()} rows`);
             check writeToSheet(googleSpreadsheetId, "Connector Summary", connectorSummaryData, false);
         }

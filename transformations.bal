@@ -1,6 +1,19 @@
 import ballerina/lang.array;
 
 // ============================================
+// Sorting Functions
+// ============================================
+
+isolated function sortPackages(Package[] packages) returns Package[] {
+    // Sort by last updated date (descending), then by total pull count (descending)
+    return packages.sort(array:DESCENDING, isolated function(Package pkg) returns [int, int] {
+        int createdDate = pkg.createdDate;
+        int totalPullCount = pkg.totalPullCount ?: 0;
+        return [createdDate, totalPullCount];
+    });
+}
+
+// ============================================
 // Data Transformation Functions
 // ============================================
 
@@ -117,13 +130,17 @@ isolated function transformPackagesToConnectorSummary(Package[] packages) return
     string[][] summaryData = [];
 
     // Add header row
-    summaryData.push(["Connector Name", "Latest Version", "Last Updated", "Area/Category", "Vendor", "API Version", "Link"]);
+    summaryData.push(["Connector Name", "Latest Version", "Total Pull Count", "Last Updated", "Area/Category", "Vendor", "API Version"]);
 
     // Add data rows
     foreach Package package in packages {
         string connectorName = package.name;
         string latestVersion = package.version;
         string lastUpdated = formatTimestampToDate(package.createdDate);
+
+        // Get total pull count
+        int? totalPullCount = package.totalPullCount;
+        string totalPullCountStr = totalPullCount is int ? totalPullCount.toString() : "N/A";
 
         // Extract Area/Category from keywords using predefined mapping
         string areaCategory = extractAreaCategory(package.keywords);
@@ -134,17 +151,17 @@ isolated function transformPackagesToConnectorSummary(Package[] packages) return
         // API Version is not available in current data
         string apiVersion = "N/A";
 
-        // Create HYPERLINK formula for the link
-        string linkFormula = string `=HYPERLINK("${package.URL}", "View")`;
+        // Create HYPERLINK formula for the connector name
+        string connectorNameFormula = string `=HYPERLINK("${package.URL}", "${connectorName}")`;
 
         summaryData.push([
-            connectorName,
+            connectorNameFormula,
             latestVersion,
+            totalPullCountStr,
             lastUpdated,
             areaCategory,
             vendor,
-            apiVersion,
-            linkFormula
+            apiVersion
         ]);
     }
 
@@ -232,7 +249,7 @@ isolated function extractAreaCategory(string[] keywords) returns string {
         "Documents"
     ];
 
-    // Check for Area/<area> or Category/<category> keywords
+    // First, check for Area/<area> or Category/<category> keywords
     foreach string keyword in keywords {
         if keyword.startsWith("Area/") || keyword.startsWith("Category/") {
             int? slashIndex = keyword.indexOf("/");
@@ -245,6 +262,15 @@ isolated function extractAreaCategory(string[] keywords) returns string {
                         return validCategory;
                     }
                 }
+            }
+        }
+    }
+
+    // Second, check all keywords directly against valid categories
+    foreach string keyword in keywords {
+        foreach string validCategory in validCategories {
+            if keyword.toLowerAscii() == validCategory.toLowerAscii() {
+                return validCategory;
             }
         }
     }
